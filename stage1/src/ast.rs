@@ -6,7 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use crate::{ast::private::U32Array, lexer};
+use crate::packed_stream::{self, BitPacked, PackedStreamReader, PackedStreamWriter};
+use crate::{lexer, packed_stream::Packable};
 
 macro_rules! Token {
     (#<eof>) => {
@@ -402,6 +403,8 @@ impl TokenIndex {
     }
 }
 
+impl packed_stream::DefaultPackable for TokenIndex {}
+
 impl Debug for TokenIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("TokenIndex").field(&self.get()).finish()
@@ -744,13 +747,10 @@ impl Ast {
         unsafe { str::from_utf8_unchecked(&bytes[..end]) }
     }
 
-    pub fn get_extra<T: Extra>(&self, idx: ExtraIndex<T>) -> T {
+    pub fn get_packed<T: Packable>(&self, idx: ExtraIndex<T>) -> T {
         let start = idx.get();
-        let end = start + <T::Destructed as private::U32Array>::LEN;
-
-        let destructured =
-            <T::Destructed as private::U32Array>::from_slice(&self.extra_data[start..end]);
-        T::construct(destructured)
+        let mut stream = PackedStreamReader::new(&self.extra_data[start..]);
+        stream.read()
     }
 }
 
@@ -760,12 +760,11 @@ impl Display for Ast {
             let idx = NodeIndex::new(idx);
             let main_token = node.main_token;
             match &node.data {
-                NodeData::Root(first, last) => {
+                NodeData::Root(members) => {
                     write!(f, "{idx} := root(")?;
-                    if let Some((first, last)) = first.zip(*last) {
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                    if let Some(members) = members {
+                        for (i, member) in members.enumerate() {
+                            let idx = self.get_packed(member);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -804,18 +803,20 @@ impl Display for Ast {
                     writeln!(f, ", init := {init_expr})")?
                 }
                 NodeData::ThreadLocalDecl(proto, type_init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    let proto = self.get_extra(*proto);
-                    let type_init_expr = self.get_extra(*type_init_expr);
-                    let type_expr = self.get_extra(type_init_expr.0);
-                    let init_expr = self.get_extra(type_init_expr.1);
+                    let DeclProtoPub {
+                        attrs,
+                        is_pub,
+                        is_var,
+                        ident,
+                        align_expr,
+                    } = self.get_packed(*proto);
+                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
 
                     write!(f, "{idx} := thread_local(name := {ident}")?;
-                    if let Some((first, last)) = proto.first_attr.zip(proto.last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, extra) in attrs.enumerate() {
+                            let idx = self.get_packed(extra);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -824,13 +825,13 @@ impl Display for Ast {
                         }
                         write!(f, "]")?;
                     }
-                    if proto.is_pub {
+                    if is_pub {
                         write!(f, ", pub")?;
                     }
-                    if proto.is_var {
+                    if is_var {
                         write!(f, ", var")?;
                     }
-                    if let Some(align_expr) = proto.align_expr {
+                    if let Some(align_expr) = align_expr {
                         write!(f, ", align := {align_expr})")?
                     }
                     if let Some(type_expr) = type_expr {
@@ -839,26 +840,29 @@ impl Display for Ast {
                     writeln!(f, ", init := {init_expr})")?
                 }
                 NodeData::ThreadLocalDeclDestructure(protos, type_init_expr) => {
-                    let protos = self.get_extra(*protos);
-                    let type_init_expr = self.get_extra(*type_init_expr);
-                    let type_expr = self.get_extra(type_init_expr.0);
-                    let init_expr = self.get_extra(type_init_expr.1);
+                    let protos = self.get_packed(*protos);
+                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
 
                     write!(f, "{idx} := thread_local_destructure(")?;
                     for (i, proto) in protos.enumerate() {
-                        let proto = self.get_extra(proto);
-                        let ident = self.get_ident(proto.ident);
+                        let DeclProtoPub {
+                            attrs,
+                            is_pub,
+                            is_var,
+                            ident,
+                            align_expr,
+                        } = self.get_packed(proto);
+                        let ident = self.get_ident(ident);
 
                         if i == 0 {
                             write!(f, "\n\t{i} := .{{ name := {ident}")?;
                         } else {
                             write!(f, ",\n\t{i} := .{{ name := {ident}")?;
                         }
-                        if let Some((first, last)) = proto.first_attr.zip(proto.last_attr) {
+                        if let Some(attrs) = attrs {
                             write!(f, ", attrs := [")?;
-                            let range = ExtraIndexRange::new(first, last);
-                            for (i, extra) in range.enumerate() {
-                                let idx = self.get_extra(extra);
+                            for (i, extra) in attrs.enumerate() {
+                                let idx = self.get_packed(extra);
                                 if i == 0 {
                                     write!(f, "{idx}")?;
                                 } else {
@@ -867,11 +871,14 @@ impl Display for Ast {
                             }
                             write!(f, "]")?;
                         }
-                        if proto.is_pub {
+                        if is_pub {
                             write!(f, ", pub")?;
                         }
-                        if proto.is_var {
+                        if is_var {
                             write!(f, ", var")?;
+                        }
+                        if let Some(align_expr) = align_expr {
+                            write!(f, ", align := {align_expr}")?;
                         }
                         write!(f, " }}")?;
                     }
@@ -897,18 +904,20 @@ impl Display for Ast {
                     writeln!(f, ", init := {init_expr})")?
                 }
                 NodeData::GlobalDecl(proto, type_init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    let proto = self.get_extra(*proto);
-                    let type_init_expr = self.get_extra(*type_init_expr);
-                    let type_expr = self.get_extra(type_init_expr.0);
-                    let init_expr = self.get_extra(type_init_expr.1);
+                    let DeclProtoPub {
+                        attrs,
+                        is_pub,
+                        is_var,
+                        ident,
+                        align_expr,
+                    } = self.get_packed(*proto);
+                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
 
                     write!(f, "{idx} := global(name := {ident}")?;
-                    if let Some((first, last)) = proto.first_attr.zip(proto.last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, extra) in attrs.enumerate() {
+                            let idx = self.get_packed(extra);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -917,13 +926,13 @@ impl Display for Ast {
                         }
                         write!(f, "]")?;
                     }
-                    if proto.is_pub {
+                    if is_pub {
                         write!(f, ", pub")?;
                     }
-                    if proto.is_var {
+                    if is_var {
                         write!(f, ", var")?;
                     }
-                    if let Some(align_expr) = proto.align_expr {
+                    if let Some(align_expr) = align_expr {
                         write!(f, ", align := {align_expr})")?
                     }
                     if let Some(type_expr) = type_expr {
@@ -932,26 +941,29 @@ impl Display for Ast {
                     writeln!(f, ", init := {init_expr})")?
                 }
                 NodeData::GlobalDeclDestructure(protos, type_init_expr) => {
-                    let protos = self.get_extra(*protos);
-                    let type_init_expr = self.get_extra(*type_init_expr);
-                    let type_expr = self.get_extra(type_init_expr.0);
-                    let init_expr = self.get_extra(type_init_expr.1);
+                    let protos = self.get_packed(*protos);
+                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
 
                     write!(f, "{idx} := global_destructure(")?;
                     for (i, proto) in protos.enumerate() {
-                        let proto = self.get_extra(proto);
-                        let ident = self.get_ident(proto.ident);
+                        let DeclProtoPub {
+                            attrs,
+                            is_pub,
+                            is_var,
+                            ident,
+                            align_expr,
+                        } = self.get_packed(proto);
+                        let ident = self.get_ident(ident);
 
                         if i == 0 {
                             write!(f, "\n\t{i} := .{{ name := {ident}")?;
                         } else {
                             write!(f, ",\n\t{i} := .{{ name := {ident}")?;
                         }
-                        if let Some((first, last)) = proto.first_attr.zip(proto.last_attr) {
+                        if let Some(attrs) = attrs {
                             write!(f, ", attrs := [")?;
-                            let range = ExtraIndexRange::new(first, last);
-                            for (i, extra) in range.enumerate() {
-                                let idx = self.get_extra(extra);
+                            for (i, extra) in attrs.enumerate() {
+                                let idx = self.get_packed(extra);
                                 if i == 0 {
                                     write!(f, "{idx}")?;
                                 } else {
@@ -960,11 +972,14 @@ impl Display for Ast {
                             }
                             write!(f, "]")?;
                         }
-                        if proto.is_pub {
+                        if is_pub {
                             write!(f, ", pub")?;
                         }
-                        if proto.is_var {
+                        if is_var {
                             write!(f, ", var")?;
+                        }
+                        if let Some(align_expr) = align_expr {
+                            write!(f, ", align := {align_expr}")?;
                         }
                         write!(f, " }}")?;
                     }
@@ -1047,19 +1062,17 @@ impl Display for Ast {
                 NodeData::ContainerField(extra) => {
                     let ident = self.get_ident(main_token);
                     let StructFieldProto {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         align_expr,
                         type_expr,
                         init_expr,
-                    } = self.get_extra(*extra);
+                    } = self.get_packed(*extra);
 
                     write!(f, "{idx} := container_field(name := {ident}")?;
-                    if let Some((first, last)) = first_attr.zip(last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, attr) in attrs.enumerate() {
+                            let idx = self.get_packed(attr);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -1082,19 +1095,17 @@ impl Display for Ast {
                 NodeData::ContainerFieldComma(extra) => {
                     let ident = self.get_ident(main_token);
                     let StructFieldProto {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         align_expr,
                         type_expr,
                         init_expr,
-                    } = self.get_extra(*extra);
+                    } = self.get_packed(*extra);
 
                     write!(f, "{idx} := container_field(name := {ident}")?;
-                    if let Some((first, last)) = first_attr.zip(last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, attrs) in attrs.enumerate() {
+                            let idx = self.get_packed(attrs);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -1187,19 +1198,17 @@ impl Display for Ast {
                 NodeData::ContainerFieldInline(extra) => {
                     let ident = self.get_ident(main_token);
                     let StructFieldProto {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         align_expr,
                         type_expr,
                         init_expr,
-                    } = self.get_extra(*extra);
+                    } = self.get_packed(*extra);
 
                     write!(f, "{idx} := container_field_inlined(name := {ident}")?;
-                    if let Some((first, last)) = first_attr.zip(last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, attr) in attrs.enumerate() {
+                            let idx = self.get_packed(attr);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -1222,19 +1231,17 @@ impl Display for Ast {
                 NodeData::ContainerFieldInlineComma(extra) => {
                     let ident = self.get_ident(main_token);
                     let StructFieldProto {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         align_expr,
                         type_expr,
                         init_expr,
-                    } = self.get_extra(*extra);
+                    } = self.get_packed(*extra);
 
                     write!(f, "{idx} := container_field_inlined(name := {ident}")?;
-                    if let Some((first, last)) = first_attr.zip(last_attr) {
+                    if let Some(attrs) = attrs {
                         write!(f, ", attrs := [")?;
-                        let range = ExtraIndexRange::new(first, last);
-                        for (i, extra) in range.enumerate() {
-                            let idx = self.get_extra(extra);
+                        for (i, attr) in attrs.enumerate() {
+                            let idx = self.get_packed(attr);
                             if i == 0 {
                                 write!(f, "{idx}")?;
                             } else {
@@ -1260,15 +1267,13 @@ impl Display for Ast {
                 )?,
                 NodeData::ImplBlockAttrs(impl_block) => {
                     let ImplBlock {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         cond_expr,
                         decl_block,
-                    } = self.get_extra(*impl_block);
+                    } = self.get_packed(*impl_block);
                     write!(f, "{idx} := impl_block(attrs := [")?;
-                    let range = ExtraIndexRange::new(first_attr, last_attr);
-                    for (i, attr) in range.enumerate() {
-                        let attr = self.get_extra(attr);
+                    for (i, attr) in attrs.enumerate() {
+                        let attr = self.get_packed(attr);
                         if i == 0 {
                             write!(f, "{attr}")?;
                         } else {
@@ -1297,11 +1302,10 @@ impl Display for Ast {
                         writeln!(f, "{idx} := block();")?
                     }
                 }
-                NodeData::Block(first, last) => {
+                NodeData::Block(members) => {
                     write!(f, "{idx} := block(")?;
-                    let range = ExtraIndexRange::new(*first, *last);
-                    for (i, extra) in range.enumerate() {
-                        let idx = self.get_extra(extra);
+                    for (i, member) in members.enumerate() {
+                        let idx = self.get_packed(member);
                         if i == 0 {
                             write!(f, "{idx}")?;
                         } else {
@@ -1310,11 +1314,10 @@ impl Display for Ast {
                     }
                     writeln!(f, ")")?;
                 }
-                NodeData::BlockSemicolon(first, last) => {
+                NodeData::BlockSemicolon(members) => {
                     write!(f, "{idx} := block(")?;
-                    let range = ExtraIndexRange::new(*first, *last);
-                    for (i, extra) in range.enumerate() {
-                        let idx = self.get_extra(extra);
+                    for (i, member) in members.enumerate() {
+                        let idx = self.get_packed(member);
                         if i == 0 {
                             write!(f, "{idx}")?;
                         } else {
@@ -1334,14 +1337,14 @@ impl Display for Ast {
                     }
                 }
                 NodeData::TemplateExpr(proto, expr) => {
-                    let TemplateExprProto { args, where_expr } = self.get_extra(*proto);
+                    let TemplateExprProto { args, where_expr } = self.get_packed(*proto);
                     write!(f, "{idx} := with(args := [")?;
                     for (i, arg) in args.enumerate() {
                         let TemplateExprArg {
                             ident,
                             type_expr,
                             init_expr,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         let ident = self.get_ident(ident);
                         if i != 0 {
                             write!(f, ", ")?;
@@ -1358,14 +1361,14 @@ impl Display for Ast {
                     }
                 }
                 NodeData::TemplateExprComma(proto, expr) => {
-                    let TemplateExprProto { args, where_expr } = self.get_extra(*proto);
+                    let TemplateExprProto { args, where_expr } = self.get_packed(*proto);
                     write!(f, "{idx} := with(args := [")?;
                     for (i, arg) in args.enumerate() {
                         let TemplateExprArg {
                             ident,
                             type_expr,
                             init_expr,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         let ident = self.get_ident(ident);
                         if i != 0 {
                             write!(f, ", ")?;
@@ -1422,7 +1425,7 @@ impl Display for Ast {
                         captures,
                         inputs,
                         outputs,
-                    } = self.get_extra(*proto);
+                    } = self.get_packed(*proto);
                     write!(f, "{idx} := asm(captures := [")?;
                     if let Some(captures) = captures {
                         for (i, capture) in captures.enumerate() {
@@ -1430,7 +1433,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 init_expr,
-                            } = self.get_extra(capture);
+                            } = self.get_packed(capture);
                             let ident = self.get_ident(ident);
                             if i != 0 {
                                 write!(f, ", ")?;
@@ -1452,7 +1455,7 @@ impl Display for Ast {
 
                     if let Some(inputs) = inputs {
                         for (i, input) in inputs.enumerate() {
-                            let AsmInput { ident, constraint } = self.get_extra(input);
+                            let AsmInput { ident, constraint } = self.get_packed(input);
                             let ident = self.get_ident(ident);
                             let constraint = self.get_string_lit(constraint);
                             if i != 0 {
@@ -1473,7 +1476,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 constraint,
-                            } = self.get_extra(output);
+                            } = self.get_packed(output);
                             let ident = self.get_ident(ident);
                             let constraint = self.get_string_lit(constraint);
                             if i != 0 {
@@ -1492,7 +1495,7 @@ impl Display for Ast {
                         captures,
                         inputs,
                         outputs,
-                    } = self.get_extra(*proto);
+                    } = self.get_packed(*proto);
                     write!(f, "{idx} := asm(volatile, captures := [")?;
                     if let Some(captures) = captures {
                         for (i, capture) in captures.enumerate() {
@@ -1500,7 +1503,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 init_expr,
-                            } = self.get_extra(capture);
+                            } = self.get_packed(capture);
                             let ident = self.get_ident(ident);
                             if i != 0 {
                                 write!(f, ", ")?;
@@ -1522,7 +1525,7 @@ impl Display for Ast {
 
                     if let Some(inputs) = inputs {
                         for (i, input) in inputs.enumerate() {
-                            let AsmInput { ident, constraint } = self.get_extra(input);
+                            let AsmInput { ident, constraint } = self.get_packed(input);
                             let ident = self.get_ident(ident);
                             let constraint = self.get_string_lit(constraint);
                             if i != 0 {
@@ -1543,7 +1546,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 constraint,
-                            } = self.get_extra(output);
+                            } = self.get_packed(output);
                             let ident = self.get_ident(ident);
                             let constraint = self.get_string_lit(constraint);
                             if i != 0 {
@@ -1583,14 +1586,14 @@ impl Display for Ast {
                         call_conv_expr,
                         return_type_expr,
                         where_expr,
-                    } = self.get_extra(*proto);
+                    } = self.get_packed(*proto);
                     write!(f, "{idx} := fn(")?;
                     if let Some(context) = context {
                         let FnContext {
                             is_optional,
                             ctx_token: _,
                             type_expr,
-                        } = self.get_extra(context);
+                        } = self.get_packed(context);
                         if let Some(type_expr) = type_expr {
                             write!(f, "context := {type_expr}, ")?;
                         } else if is_optional {
@@ -1607,7 +1610,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 init_expr,
-                            } = self.get_extra(capture);
+                            } = self.get_packed(capture);
                             let ident = self.get_ident(ident);
                             if i != 0 {
                                 write!(f, ", ")?;
@@ -1633,7 +1636,7 @@ impl Display for Ast {
                             is_var,
                             pointer_type,
                             self_token: _,
-                        } = self.get_extra(receiver);
+                        } = self.get_packed(receiver);
                         match modifier {
                             FnArgModifier::None => {}
                             FnArgModifier::Const => write!(f, "const ")?,
@@ -1665,7 +1668,7 @@ impl Display for Ast {
                                 ident,
                                 type_expr,
                                 default_expr,
-                            } = self.get_extra(arg);
+                            } = self.get_packed(arg);
                             let ident = self.get_ident(ident);
                             if i != 0 || receiver.is_some() {
                                 write!(f, ", ")?;
@@ -1742,7 +1745,7 @@ impl Display for Ast {
                 NodeData::ExprInitList(exprs) => {
                     write!(f, "{idx} := init_list(exprs := [")?;
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -1753,7 +1756,7 @@ impl Display for Ast {
                 NodeData::ExprInitListComma(exprs) => {
                     write!(f, "{idx} := init_list(exprs := [")?;
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -1763,20 +1766,20 @@ impl Display for Ast {
                 }
                 NodeData::FieldInitListTwo(first, second) => {
                     write!(f, "{idx} := init_list(fields := [")?;
-                    let FieldInit { ident, init_expr } = self.get_extra(*first);
+                    let FieldInit { ident, init_expr } = self.get_packed(*first);
                     write!(f, "{ident} := {init_expr}")?;
                     if let Some(second) = second {
-                        let FieldInit { ident, init_expr } = self.get_extra(*second);
+                        let FieldInit { ident, init_expr } = self.get_packed(*second);
                         write!(f, ", {ident} := {init_expr}")?;
                     }
                     writeln!(f, "])")?;
                 }
                 NodeData::FieldInitListTwoComma(first, second) => {
                     write!(f, "{idx} := init_list(fields := [")?;
-                    let FieldInit { ident, init_expr } = self.get_extra(*first);
+                    let FieldInit { ident, init_expr } = self.get_packed(*first);
                     write!(f, "{ident} := {init_expr}")?;
                     if let Some(second) = second {
-                        let FieldInit { ident, init_expr } = self.get_extra(*second);
+                        let FieldInit { ident, init_expr } = self.get_packed(*second);
                         write!(f, ", {ident} := {init_expr}")?;
                     }
                     writeln!(f, ",])")?;
@@ -1784,7 +1787,7 @@ impl Display for Ast {
                 NodeData::FieldInitList(fields) => {
                     write!(f, "{idx} := init_list(fields := [")?;
                     for (i, field) in fields.enumerate() {
-                        let FieldInit { ident, init_expr } = self.get_extra(field);
+                        let FieldInit { ident, init_expr } = self.get_packed(field);
                         let ident = self.get_ident(ident);
                         if i != 0 {
                             write!(f, ", ")?;
@@ -1796,7 +1799,7 @@ impl Display for Ast {
                 NodeData::FieldInitListComma(fields) => {
                     write!(f, "{idx} := init_list(fields := [")?;
                     for (i, field) in fields.enumerate() {
-                        let FieldInit { ident, init_expr } = self.get_extra(field);
+                        let FieldInit { ident, init_expr } = self.get_packed(field);
                         let ident = self.get_ident(ident);
                         if i != 0 {
                             write!(f, ", ")?;
@@ -1840,7 +1843,7 @@ impl Display for Ast {
                     let SinglePointerPrefix {
                         pointer_type,
                         align_expr,
-                    } = self.get_extra(*prefix);
+                    } = self.get_packed(*prefix);
                     write!(f, "{idx} := single_pointer(type := ")?;
                     match pointer_type {
                         PointerType::Default => write!(f, "{type_expr}")?,
@@ -1876,7 +1879,7 @@ impl Display for Ast {
                         pointer_type,
                         sentinel_expr,
                         align_expr,
-                    } = self.get_extra(*prefix);
+                    } = self.get_packed(*prefix);
                     write!(f, "{idx} := multi_pointer(type := ")?;
                     match pointer_type {
                         PointerType::Default => write!(f, "{type_expr}")?,
@@ -1901,21 +1904,24 @@ impl Display for Ast {
                     writeln!(f, "{idx} := vector(len := {len_expr}, type := {type_expr})")?
                 }
                 NodeData::MatrixSimple(rows_cols, type_expr) => {
-                    let ExtraIndexPair(rows, cols) = self.get_extra(*rows_cols);
-                    let rows = self.get_extra(rows);
-                    let cols = self.get_extra(cols);
+                    let PackedPair(rows, cols) = self.get_packed(*rows_cols);
                     writeln!(
                         f,
                         "{idx} := matrix(rows := {rows}, columns := {cols}, type := {type_expr})"
+                    )?
+                }
+                NodeData::Matrix(info, type_expr) => {
+                    let Matrix { rows, cols, layout } = self.get_packed(*info);
+                    writeln!(
+                        f,
+                        "{idx} := matrix(rows := {rows}, columns := {cols}, layout := {layout}, type := {type_expr})"
                     )?
                 }
                 NodeData::ArraySimple(len_expr, type_expr) => {
                     writeln!(f, "{idx} := array(len := {len_expr}, type := {type_expr})")?
                 }
                 NodeData::Array(len_sentinel, type_expr) => {
-                    let ExtraIndexPair(len_expr, sentinel_expr) = self.get_extra(*len_sentinel);
-                    let len_expr = self.get_extra(len_expr);
-                    let sentinel_expr = self.get_extra(sentinel_expr);
+                    let PackedPair(len_expr, sentinel_expr) = self.get_packed(*len_sentinel);
                     writeln!(
                         f,
                         "{idx} := array(len := {len_expr}, sentinel := {sentinel_expr}, type := {type_expr})"
@@ -2042,12 +2048,12 @@ impl Display for Ast {
                 }
                 NodeData::TemplateTypeExpr(args, type_expr) => {
                     write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_extra(*args);
+                    let args = self.get_packed(*args);
                     for (i, arg) in args.enumerate() {
                         let TemplateTypeExprArg {
                             type_expr,
                             has_init,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -2061,12 +2067,12 @@ impl Display for Ast {
                 }
                 NodeData::TemplateTypeExprComma(args, type_expr) => {
                     write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_extra(*args);
+                    let args = self.get_packed(*args);
                     for (i, arg) in args.enumerate() {
                         let TemplateTypeExprArg {
                             type_expr,
                             has_init,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -2080,12 +2086,12 @@ impl Display for Ast {
                 }
                 NodeData::TemplateTypeExprDots(args, type_expr) => {
                     write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_extra(*args);
+                    let args = self.get_packed(*args);
                     for (i, arg) in args.enumerate() {
                         let TemplateTypeExprArg {
                             type_expr,
                             has_init,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -2099,12 +2105,12 @@ impl Display for Ast {
                 }
                 NodeData::TemplateTypeExprDotsComma(args, type_expr) => {
                     write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_extra(*args);
+                    let args = self.get_packed(*args);
                     for (i, arg) in args.enumerate() {
                         let TemplateTypeExprArg {
                             type_expr,
                             has_init,
-                        } = self.get_extra(arg);
+                        } = self.get_packed(arg);
                         if i != 0 {
                             write!(f, ", ")?;
                         }
@@ -2136,9 +2142,9 @@ impl Display for Ast {
                 )?,
                 NodeData::Bind(type_expr, exprs) => {
                     write!(f, "{idx} := bind(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_extra(*exprs);
+                    let exprs = self.get_packed(*exprs);
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i == 0 {
                             write!(f, "{expr}")?;
                         } else {
@@ -2149,9 +2155,9 @@ impl Display for Ast {
                 }
                 NodeData::BindComma(type_expr, exprs) => {
                     write!(f, "{idx} := bind(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_extra(*exprs);
+                    let exprs = self.get_packed(*exprs);
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i == 0 {
                             write!(f, "{expr}")?;
                         } else {
@@ -2176,9 +2182,9 @@ impl Display for Ast {
                 )?,
                 NodeData::Call(type_expr, exprs) => {
                     write!(f, "{idx} := call(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_extra(*exprs);
+                    let exprs = self.get_packed(*exprs);
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i == 0 {
                             write!(f, "{expr}")?;
                         } else {
@@ -2189,9 +2195,9 @@ impl Display for Ast {
                 }
                 NodeData::CallComma(type_expr, exprs) => {
                     write!(f, "{idx} := call(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_extra(*exprs);
+                    let exprs = self.get_packed(*exprs);
                     for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_extra(expr);
+                        let expr = self.get_packed(expr);
                         if i == 0 {
                             write!(f, "{expr}")?;
                         } else {
@@ -2263,38 +2269,10 @@ pub enum ErrorData {
     InvalidByte(usize),
 }
 
-pub trait Extra: Copy {
-    type Destructed: private::U32Array;
-
-    fn destruct(self) -> Self::Destructed;
-    fn construct(value: Self::Destructed) -> Self;
-}
-
-mod private {
-    pub trait U32Array: Sized {
-        const LEN: usize;
-
-        fn from_slice(value: &[u32]) -> Self;
-        fn write_to_vec(self, v: &mut Vec<u32>);
-    }
-
-    impl<const N: usize> U32Array for [u32; N] {
-        const LEN: usize = N;
-
-        fn from_slice(value: &[u32]) -> Self {
-            value.as_array().copied().unwrap()
-        }
-
-        fn write_to_vec(self, v: &mut Vec<u32>) {
-            v.extend(self);
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExtraIndex<T: Extra>(NonZero<u32>, PhantomData<fn() -> T>);
+pub struct ExtraIndex<T: Packable>(NonZero<u32>, PhantomData<fn() -> T>);
 
-impl<T: Extra> ExtraIndex<T> {
+impl<T: Packable> ExtraIndex<T> {
     pub const fn new(index: usize) -> Self {
         assert!(index < u32::MAX as usize);
         Self(
@@ -2335,10 +2313,12 @@ impl<T: Extra> ExtraIndex<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExtraIndexRange<T: Extra>(ExtraIndex<T>, ExtraIndex<T>);
+impl<T: Packable> packed_stream::DefaultPackable for ExtraIndex<T> {}
 
-impl<T: Extra> ExtraIndexRange<T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ExtraIndexRange<T: Packable>(pub ExtraIndex<T>, pub ExtraIndex<T>);
+
+impl<T: Packable> ExtraIndexRange<T> {
     pub const fn new(start: ExtraIndex<T>, end: ExtraIndex<T>) -> Self {
         Self(start, end)
     }
@@ -2352,14 +2332,50 @@ impl<T: Extra> ExtraIndexRange<T> {
     }
 }
 
-impl<T: Extra> Iterator for ExtraIndexRange<T> {
+impl<T: Packable> Packable for ExtraIndexRange<T> {
+    const LEN: usize = <(ExtraIndex<T>, ExtraIndex<T>) as Packable>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.0);
+        buffer.write(self.1);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self(buffer.read(), buffer.read())
+    }
+}
+
+impl<T: Packable> Packable for Option<ExtraIndexRange<T>> {
+    const LEN: usize = <(Option<ExtraIndex<T>>, Option<ExtraIndex<T>>) as Packable>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        let (start, end) = match self {
+            Some(x) => (Some(x.0), Some(x.1)),
+            None => (None, None),
+        };
+        buffer.write(start);
+        buffer.write(end);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let start = buffer.read::<Option<ExtraIndex<T>>>();
+        let end = buffer.read::<Option<ExtraIndex<T>>>();
+        if let Some((start, end)) = start.zip(end) {
+            Some(ExtraIndexRange(start, end))
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Packable> Iterator for ExtraIndexRange<T> {
     type Item = ExtraIndex<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.get() > self.1.get() {
             None
         } else {
-            let step = const { (size_of::<T::Destructed>() / size_of::<u32>()) as u32 };
+            let step = const { T::LEN as u32 };
             let index = self.0;
             self.0 = ExtraIndex::new_u32(self.0.get_u32() + step);
             Some(index)
@@ -2367,30 +2383,19 @@ impl<T: Extra> Iterator for ExtraIndexRange<T> {
     }
 }
 
-impl<T: Extra> Extra for ExtraIndexRange<T> {
-    type Destructed = [u32; 2];
-
-    fn destruct(self) -> Self::Destructed {
-        [self.0.get_u32(), self.1.get_u32()]
-    }
-
-    fn construct(value: Self::Destructed) -> Self {
-        Self(ExtraIndex::new_u32(value[0]), ExtraIndex::new_u32(value[1]))
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExtraIndexPair<T: Extra, U: Extra>(pub ExtraIndex<T>, pub ExtraIndex<U>);
+pub struct PackedPair<T: Packable, U: Packable>(pub T, pub U);
 
-impl<T: Extra, U: Extra> Extra for ExtraIndexPair<T, U> {
-    type Destructed = [u32; 2];
+impl<T: Packable, U: Packable> Packable for PackedPair<T, U> {
+    const LEN: usize = <(T, U) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [self.0.get_u32(), self.1.get_u32()]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.0);
+        buffer.write(self.1);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        Self(ExtraIndex::new_u32(value[0]), ExtraIndex::new_u32(value[1]))
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self(buffer.read(), buffer.read())
     }
 }
 
@@ -2434,29 +2439,7 @@ impl NodeIndex {
     }
 }
 
-impl Extra for NodeIndex {
-    type Destructed = [u32; 1];
-
-    fn destruct(self) -> Self::Destructed {
-        [self.get_u32()]
-    }
-
-    fn construct(value: Self::Destructed) -> Self {
-        Self::new(value[0] as usize)
-    }
-}
-
-impl Extra for Option<NodeIndex> {
-    type Destructed = [u32; 1];
-
-    fn destruct(self) -> Self::Destructed {
-        [NodeIndex::unwrap_optional(self)]
-    }
-
-    fn construct(value: Self::Destructed) -> Self {
-        NodeIndex::new_optional(value[0])
-    }
-}
+impl packed_stream::DefaultPackable for NodeIndex {}
 
 impl Debug for NodeIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -2488,7 +2471,7 @@ pub enum NodeData {
     /// 2. Last attribute/member/field
     ///
     /// `main_token` is the first token for the source file.
-    Root(Option<ExtraIndex<NodeIndex>>, Option<ExtraIndex<NodeIndex>>),
+    Root(Option<ExtraIndexRange<NodeIndex>>),
     /// `#![struct]`
     /// 1. Index to the `#` token.
     /// 2. Index to the `]` token.
@@ -2549,7 +2532,7 @@ pub enum NodeData {
     /// `main_token` is the identifier token.
     ThreadLocalDecl(
         ExtraIndex<DeclProtoPub>,
-        ExtraIndex<ExtraIndexPair<Option<NodeIndex>, NodeIndex>>,
+        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
     ),
     /// `thread_local #[...] a align(expr_1), ..., #[...] n align(expr_n) : type_expr : generic_expr;`
     /// 1. Declaration prototype list.
@@ -2558,7 +2541,7 @@ pub enum NodeData {
     /// `main_token` is the `thread_local` token.
     ThreadLocalDeclDestructure(
         ExtraIndex<ExtraIndexRange<DeclProtoPub>>,
-        ExtraIndex<ExtraIndexPair<Option<NodeIndex>, NodeIndex>>,
+        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
     ),
     /// `a align(expr) :: generic_expr;`
     /// 1. Align expression.
@@ -2579,7 +2562,7 @@ pub enum NodeData {
     /// `main_token` is the identifier token.
     GlobalDecl(
         ExtraIndex<DeclProtoPub>,
-        ExtraIndex<ExtraIndexPair<Option<NodeIndex>, NodeIndex>>,
+        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
     ),
     /// `#[...] a align(expr_1), ..., #[...] n align(expr_n) : type_expr : generic_expr;`
     /// 1. Declaration prototype list.
@@ -2588,7 +2571,7 @@ pub enum NodeData {
     /// `main_token` is the `;` token.
     GlobalDeclDestructure(
         ExtraIndex<ExtraIndexRange<DeclProtoPub>>,
-        ExtraIndex<ExtraIndexPair<Option<NodeIndex>, NodeIndex>>,
+        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
     ),
     /// `a align(expr) : type_expr`
     /// 1. Optional alignment expression.
@@ -2692,7 +2675,7 @@ pub enum NodeData {
     ///
     /// `main_token` is the `impl` token.
     ImplBlock(NodeIndex, NodeIndex),
-    /// `impl condition {}`
+    /// `#[...] impl condition {}`
     /// 1. Impl block
     ///
     /// `main_token` is the `impl` token.
@@ -2714,13 +2697,13 @@ pub enum NodeData {
     /// 2. Index to the last statement.
     ///
     /// `main_token` is the `{` token.
-    Block(ExtraIndex<NodeIndex>, ExtraIndex<NodeIndex>),
+    Block(ExtraIndexRange<NodeIndex>),
     /// `{a b};`
     /// 1. Index to the first statement.
     /// 2. Index to the last statement.
     ///
     /// `main_token` is the `{` token.
-    BlockSemicolon(ExtraIndex<NodeIndex>, ExtraIndex<NodeIndex>),
+    BlockSemicolon(ExtraIndexRange<NodeIndex>),
     /// `with[] where(expr) expr`
     /// 1. Optional where expression.
     /// 2. Template expression.
@@ -2907,7 +2890,13 @@ pub enum NodeData {
     /// 2. Type expression.
     ///
     /// `main_token` is the first `[` token.
-    MatrixSimple(ExtraIndex<ExtraIndexPair<NodeIndex, NodeIndex>>, NodeIndex),
+    MatrixSimple(ExtraIndex<PackedPair<NodeIndex, NodeIndex>>, NodeIndex),
+    /// `[[rows, columns]:layout]type_expr`
+    /// 1. Matrix info.
+    /// 2. Type expression.
+    ///
+    /// `main_token` is the first `[` token.
+    Matrix(ExtraIndex<Matrix>, NodeIndex),
     /// `[len]type_expr`
     /// 1. Length expression.
     /// 2. Type expression.
@@ -2919,7 +2908,7 @@ pub enum NodeData {
     /// 2. Type expression.
     ///
     /// `main_token` is the `[` token.
-    Array(ExtraIndex<ExtraIndexPair<NodeIndex, NodeIndex>>, NodeIndex),
+    Array(ExtraIndex<PackedPair<NodeIndex, NodeIndex>>, NodeIndex),
     /// `.enum_literal`
     /// 1. Literal token
     ///
@@ -3125,98 +3114,92 @@ pub enum NodeData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DeclProtoPub {
-    first_attr: Option<ExtraIndex<NodeIndex>>,
-    last_attr: Option<ExtraIndex<NodeIndex>>,
+    attrs: Option<ExtraIndexRange<NodeIndex>>,
     is_pub: bool,
     is_var: bool,
     ident: TokenIndex,
     align_expr: Option<NodeIndex>,
 }
 
-impl Extra for DeclProtoPub {
-    type Destructed = [u32; 5];
+impl Packable for DeclProtoPub {
+    const LEN: usize = <(BitPacked<(bool, bool)>, TokenIndex, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            ExtraIndex::unwrap_optional(self.first_attr),
-            ExtraIndex::unwrap_optional(self.last_attr),
-            (self.is_pub as u32) | ((self.is_var as u32) << 1),
-            self.ident.get(),
-            NodeIndex::unwrap_optional(self.align_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.attrs);
+        buffer.write(BitPacked::pack_bits((self.is_pub, self.is_var)));
+        buffer.write(self.ident);
+        buffer.write(self.align_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let attrs = buffer.read();
+        let (is_pub, is_var) = buffer.read::<BitPacked<(bool, bool)>>().unpack();
+        let ident = buffer.read();
+        let align_expr = buffer.read();
         Self {
-            first_attr: ExtraIndex::new_optional(value[0]),
-            last_attr: ExtraIndex::new_optional(value[1]),
-            is_pub: (value[2] & 1) != 0,
-            is_var: (value[2] & 2) != 0,
-            ident: TokenIndex::new(value[3]),
-            align_expr: NodeIndex::new_optional(value[4]),
+            attrs,
+            is_pub,
+            is_var,
+            ident,
+            align_expr,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StructFieldProto {
-    first_attr: Option<ExtraIndex<NodeIndex>>,
-    last_attr: Option<ExtraIndex<NodeIndex>>,
+    attrs: Option<ExtraIndexRange<NodeIndex>>,
     align_expr: Option<NodeIndex>,
     type_expr: Option<NodeIndex>,
     init_expr: Option<NodeIndex>,
 }
 
-impl Extra for StructFieldProto {
-    type Destructed = [u32; 5];
+impl Packable for StructFieldProto {
+    const LEN: usize = <(
+        Option<ExtraIndexRange<NodeIndex>>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+    ) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            ExtraIndex::unwrap_optional(self.first_attr),
-            ExtraIndex::unwrap_optional(self.last_attr),
-            NodeIndex::unwrap_optional(self.align_expr),
-            NodeIndex::unwrap_optional(self.type_expr),
-            NodeIndex::unwrap_optional(self.init_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.attrs);
+        buffer.write(self.align_expr);
+        buffer.write(self.type_expr);
+        buffer.write(self.init_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            first_attr: ExtraIndex::new_optional(value[0]),
-            last_attr: ExtraIndex::new_optional(value[1]),
-            align_expr: NodeIndex::new_optional(value[2]),
-            type_expr: NodeIndex::new_optional(value[3]),
-            init_expr: NodeIndex::new_optional(value[4]),
+            attrs: buffer.read(),
+            align_expr: buffer.read(),
+            type_expr: buffer.read(),
+            init_expr: buffer.read(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImplBlock {
-    first_attr: ExtraIndex<NodeIndex>,
-    last_attr: ExtraIndex<NodeIndex>,
+    attrs: ExtraIndexRange<NodeIndex>,
     cond_expr: NodeIndex,
     decl_block: NodeIndex,
 }
 
-impl Extra for ImplBlock {
-    type Destructed = [u32; 4];
+impl Packable for ImplBlock {
+    const LEN: usize = <(ExtraIndexRange<NodeIndex>, NodeIndex, NodeIndex) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.first_attr.get_u32(),
-            self.last_attr.get_u32(),
-            self.cond_expr.get_u32(),
-            self.decl_block.get_u32(),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.attrs);
+        buffer.write(self.cond_expr);
+        buffer.write(self.decl_block);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            first_attr: ExtraIndex::new_u32(value[0]),
-            last_attr: ExtraIndex::new_u32(value[1]),
-            cond_expr: NodeIndex::new_u32(value[2]),
-            decl_block: NodeIndex::new_u32(value[3]),
+            attrs: buffer.read(),
+            cond_expr: buffer.read(),
+            decl_block: buffer.read(),
         }
     }
 }
@@ -3228,22 +3211,20 @@ pub struct TemplateExprArg {
     init_expr: Option<NodeIndex>,
 }
 
-impl Extra for TemplateExprArg {
-    type Destructed = [u32; 3];
+impl Packable for TemplateExprArg {
+    const LEN: usize = <(TokenIndex, NodeIndex, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.ident.get(),
-            self.type_expr.get_u32(),
-            NodeIndex::unwrap_optional(self.init_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.type_expr);
+        buffer.write(self.init_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            ident: TokenIndex::new(value[0]),
-            type_expr: NodeIndex::new_u32(value[1]),
-            init_expr: NodeIndex::new_optional(value[2]),
+            ident: buffer.read(),
+            type_expr: buffer.read(),
+            init_expr: buffer.read(),
         }
     }
 }
@@ -3254,23 +3235,19 @@ pub struct TemplateExprProto {
     where_expr: Option<NodeIndex>,
 }
 
-impl Extra for TemplateExprProto {
-    type Destructed = [u32; 3];
+impl Packable for TemplateExprProto {
+    const LEN: usize = <(ExtraIndexRange<TemplateExprArg>, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.args.0.get_u32(),
-            self.args.1.get_u32(),
-            NodeIndex::unwrap_optional(self.where_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.args);
+        buffer.write(self.where_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let first_arg = ExtraIndex::new_u32(value[0]);
-        let last_arg = ExtraIndex::new_u32(value[1]);
-        let args = ExtraIndexRange::new(first_arg, last_arg);
-        let where_expr = NodeIndex::new_optional(value[2]);
-        Self { args, where_expr }
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            args: buffer.read(),
+            where_expr: buffer.read(),
+        }
     }
 }
 
@@ -3281,22 +3258,20 @@ pub struct AsmCapture {
     init_expr: Option<NodeIndex>,
 }
 
-impl Extra for AsmCapture {
-    type Destructed = [u32; 3];
+impl Packable for AsmCapture {
+    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.ident.get(),
-            NodeIndex::unwrap_optional(self.type_expr),
-            NodeIndex::unwrap_optional(self.init_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.type_expr);
+        buffer.write(self.init_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            ident: TokenIndex::new(value[0]),
-            type_expr: NodeIndex::new_optional(value[1]),
-            init_expr: NodeIndex::new_optional(value[2]),
+            ident: buffer.read(),
+            type_expr: buffer.read(),
+            init_expr: buffer.read(),
         }
     }
 }
@@ -3307,17 +3282,18 @@ pub struct AsmInput {
     constraint: TokenIndex,
 }
 
-impl Extra for AsmInput {
-    type Destructed = [u32; 2];
+impl Packable for AsmInput {
+    const LEN: usize = <(TokenIndex, TokenIndex) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [self.ident.get(), self.constraint.get()]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.constraint);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            ident: TokenIndex::new(value[0]),
-            constraint: TokenIndex::new(value[1]),
+            ident: buffer.read(),
+            constraint: buffer.read(),
         }
     }
 }
@@ -3329,22 +3305,20 @@ pub struct AsmOutput {
     constraint: TokenIndex,
 }
 
-impl Extra for AsmOutput {
-    type Destructed = [u32; 3];
+impl Packable for AsmOutput {
+    const LEN: usize = <(TokenIndex, NodeIndex, TokenIndex) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.ident.get(),
-            self.type_expr.get_u32(),
-            self.constraint.get(),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.type_expr);
+        buffer.write(self.constraint);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            ident: TokenIndex::new(value[0]),
-            type_expr: NodeIndex::new_u32(value[1]),
-            constraint: TokenIndex::new(value[2]),
+            ident: buffer.read(),
+            type_expr: buffer.read(),
+            constraint: buffer.read(),
         }
     }
 }
@@ -3359,59 +3333,35 @@ pub struct AsmProto {
     outputs: Option<ExtraIndexRange<AsmOutput>>,
 }
 
-impl Extra for AsmProto {
-    type Destructed = [u32; 8];
+impl Packable for AsmProto {
+    const LEN: usize = <(
+        BitPacked<(bool, bool)>,
+        Option<ExtraIndexRange<AsmCapture>>,
+        Option<ExtraIndexRange<AsmInput>>,
+        Option<ExtraIndexRange<AsmOutput>>,
+    ) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        let (cap_start, cap_end) = self
-            .captures
-            .map(|r| (Some(r.0), Some(r.1)))
-            .unwrap_or_default();
-        let (inp_start, inp_end) = self
-            .inputs
-            .map(|r| (Some(r.0), Some(r.1)))
-            .unwrap_or_default();
-        let (out_start, out_end) = self
-            .outputs
-            .map(|r| (Some(r.0), Some(r.1)))
-            .unwrap_or_default();
-        [
-            (self.has_trailing_capture_comma as u32)
-                | ((self.has_trailing_input_comma as u32) << 1),
-            self.clobbers_expr.get_u32(),
-            ExtraIndex::unwrap_optional(cap_start),
-            ExtraIndex::unwrap_optional(cap_end),
-            ExtraIndex::unwrap_optional(inp_start),
-            ExtraIndex::unwrap_optional(inp_end),
-            ExtraIndex::unwrap_optional(out_start),
-            ExtraIndex::unwrap_optional(out_end),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(BitPacked::pack_bits((
+            self.has_trailing_capture_comma,
+            self.has_trailing_input_comma,
+        )));
+        buffer.write(self.clobbers_expr);
+        buffer.write(self.captures);
+        buffer.write(self.inputs);
+        buffer.write(self.outputs);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let has_trailing_capture_comma = value[0] & 1 != 0;
-        let has_trailing_input_comma = value[0] & 2 != 0;
-        let clobbers_expr = NodeIndex::new_u32(value[1]);
-        let cap_start = ExtraIndex::new_optional(value[2]);
-        let cap_end = ExtraIndex::new_optional(value[3]);
-        let inp_start = ExtraIndex::new_optional(value[4]);
-        let inp_end = ExtraIndex::new_optional(value[5]);
-        let out_start = ExtraIndex::new_optional(value[6]);
-        let out_end = ExtraIndex::new_optional(value[7]);
-
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let (has_trailing_capture_comma, has_trailing_input_comma) =
+            buffer.read::<BitPacked<(bool, bool)>>().unpack();
         Self {
             has_trailing_capture_comma,
             has_trailing_input_comma,
-            clobbers_expr,
-            captures: cap_start
-                .zip(cap_end)
-                .map(|(x, y)| ExtraIndexRange::new(x, y)),
-            inputs: inp_start
-                .zip(inp_end)
-                .map(|(x, y)| ExtraIndexRange::new(x, y)),
-            outputs: out_start
-                .zip(out_end)
-                .map(|(x, y)| ExtraIndexRange::new(x, y)),
+            clobbers_expr: buffer.read(),
+            captures: buffer.read(),
+            inputs: buffer.read(),
+            outputs: buffer.read(),
         }
     }
 }
@@ -3423,22 +3373,20 @@ pub struct FnContext {
     type_expr: Option<NodeIndex>,
 }
 
-impl Extra for FnContext {
-    type Destructed = [u32; 3];
+impl Packable for FnContext {
+    const LEN: usize = <(bool, TokenIndex, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.is_optional as u32,
-            self.ctx_token.get(),
-            NodeIndex::unwrap_optional(self.type_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.is_optional);
+        buffer.write(self.ctx_token);
+        buffer.write(self.type_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            is_optional: value[0] != 0,
-            ctx_token: TokenIndex::new(value[1]),
-            type_expr: NodeIndex::new_optional(value[2]),
+            is_optional: buffer.read(),
+            ctx_token: buffer.read(),
+            type_expr: buffer.read(),
         }
     }
 }
@@ -3450,22 +3398,20 @@ pub struct FnCapture {
     init_expr: Option<NodeIndex>,
 }
 
-impl Extra for FnCapture {
-    type Destructed = [u32; 3];
+impl Packable for FnCapture {
+    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.ident.get(),
-            NodeIndex::unwrap_optional(self.type_expr),
-            NodeIndex::unwrap_optional(self.init_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.type_expr);
+        buffer.write(self.init_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            ident: TokenIndex::new(value[0]),
-            type_expr: NodeIndex::new_optional(value[1]),
-            init_expr: NodeIndex::new_optional(value[2]),
+            ident: buffer.read(),
+            type_expr: buffer.read(),
+            init_expr: buffer.read(),
         }
     }
 }
@@ -3478,47 +3424,30 @@ pub struct FnReceiver {
     self_token: TokenIndex,
 }
 
-impl Extra for FnReceiver {
-    type Destructed = [u32; 2];
+impl Packable for FnReceiver {
+    const LEN: usize = <(
+        BitPacked<(FnArgModifier, bool, Option<PointerType>)>,
+        TokenIndex,
+    ) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        let mut flags = (self.modifier as u32) | ((self.is_var as u32) << 2);
-        flags |= self
-            .pointer_type
-            .map(|t| (t as u32) + 1)
-            .unwrap_or_default()
-            << 3;
-        [flags, self.self_token.get()]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(BitPacked::pack_bits((
+            self.modifier,
+            self.is_var,
+            self.pointer_type,
+        )));
+        buffer.write(self.self_token);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let flags = value[0];
-        let modifier = match flags & 3 {
-            0 => FnArgModifier::None,
-            1 => FnArgModifier::Const,
-            2 => FnArgModifier::NoAlias,
-            _ => unreachable!(),
-        };
-        let is_var = flags & 4 != 0;
-        let pointer_type = match flags >> 3 {
-            0 => None,
-            1 => Some(PointerType::Default),
-            2 => Some(PointerType::Var),
-            3 => Some(PointerType::OptVar),
-            4 => Some(PointerType::Volatile),
-            5 => Some(PointerType::OptVolatile),
-            6 => Some(PointerType::VarVolatile),
-            7 => Some(PointerType::OptVarVolatile),
-            8 => Some(PointerType::VarOptVolatile),
-            9 => Some(PointerType::OptVarOptVolatile),
-            _ => unreachable!(),
-        };
-        let self_token = TokenIndex::new(value[1]);
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let (modifier, is_var, pointer_type) = buffer
+            .read::<BitPacked<(FnArgModifier, bool, Option<PointerType>)>>()
+            .unpack();
         Self {
             modifier,
             is_var,
             pointer_type,
-            self_token,
+            self_token: buffer.read(),
         }
     }
 }
@@ -3532,35 +3461,29 @@ pub struct FnArg {
     default_expr: Option<NodeIndex>,
 }
 
-impl Extra for FnArg {
-    type Destructed = [u32; 4];
+impl Packable for FnArg {
+    const LEN: usize = <(
+        BitPacked<(FnArgModifier, bool)>,
+        TokenIndex,
+        NodeIndex,
+        Option<NodeIndex>,
+    ) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            (self.modifier as u32) | ((self.is_var as u32) << 2),
-            self.ident.get(),
-            self.type_expr.get_u32(),
-            NodeIndex::unwrap_optional(self.default_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(BitPacked::pack_bits((self.modifier, self.is_var)));
+        buffer.write(self.ident);
+        buffer.write(self.type_expr);
+        buffer.write(self.default_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let modifier = match value[0] & 3 {
-            0 => FnArgModifier::None,
-            1 => FnArgModifier::Const,
-            2 => FnArgModifier::NoAlias,
-            _ => unreachable!(),
-        };
-        let is_var = value[0] & 4 != 0;
-        let ident = TokenIndex::new(value[1]);
-        let type_expr = NodeIndex::new_u32(value[2]);
-        let default_expr = NodeIndex::new_optional(value[3]);
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let (modifier, is_var) = buffer.read::<BitPacked<(FnArgModifier, bool)>>().unpack();
         Self {
             modifier,
             is_var,
-            ident,
-            type_expr,
-            default_expr,
+            ident: buffer.read(),
+            type_expr: buffer.read(),
+            default_expr: buffer.read(),
         }
     }
 }
@@ -3579,81 +3502,48 @@ pub struct FnProto {
     where_expr: Option<NodeIndex>,
 }
 
-impl Extra for FnProto {
-    type Destructed = [u32; 10];
+impl Packable for FnProto {
+    const LEN: usize = <(
+        BitPacked<(bool, bool, FnModifier)>,
+        Option<ExtraIndex<FnContext>>,
+        Option<ExtraIndexRange<FnCapture>>,
+        Option<ExtraIndex<FnReceiver>>,
+        Option<ExtraIndexRange<FnArg>>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+    ) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        let flags = (self.has_trailing_capture_comma as u32)
-            | ((self.has_trailing_arg_comma as u32) << 1)
-            | ((self.modifier as u32) << 2);
-        let context = ExtraIndex::unwrap_optional(self.context);
-        let (captures_start, captures_end) = self
-            .captures
-            .map(|r| (Some(r.0), Some(r.1)))
-            .unwrap_or_default();
-        let captures_start = ExtraIndex::unwrap_optional(captures_start);
-        let captures_end = ExtraIndex::unwrap_optional(captures_end);
-        let receiver = ExtraIndex::unwrap_optional(self.receiver);
-        let (args_start, args_end) = self
-            .args
-            .map(|r| (Some(r.0), Some(r.1)))
-            .unwrap_or_default();
-        let args_start = ExtraIndex::unwrap_optional(args_start);
-        let args_end = ExtraIndex::unwrap_optional(args_end);
-        let call_conv_expr = NodeIndex::unwrap_optional(self.call_conv_expr);
-        let return_type_expr = NodeIndex::unwrap_optional(self.return_type_expr);
-        let where_expr = NodeIndex::unwrap_optional(self.where_expr);
-        [
-            flags,
-            context,
-            captures_start,
-            captures_end,
-            receiver,
-            args_start,
-            args_end,
-            call_conv_expr,
-            return_type_expr,
-            where_expr,
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(BitPacked::pack_bits((
+            self.has_trailing_capture_comma,
+            self.has_trailing_arg_comma,
+            self.modifier,
+        )));
+        buffer.write(self.context);
+        buffer.write(self.captures);
+        buffer.write(self.receiver);
+        buffer.write(self.args);
+        buffer.write(self.call_conv_expr);
+        buffer.write(self.return_type_expr);
+        buffer.write(self.where_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let has_trailing_capture_comma = value[0] & 1 != 0;
-        let has_trailing_arg_comma = value[0] & 2 != 0;
-        let modifier = match value[0] >> 2 {
-            0 => FnModifier::None,
-            1 => FnModifier::Const,
-            2 => FnModifier::Inline,
-            3 => FnModifier::NoInline,
-            _ => unreachable!(),
-        };
-        let context = ExtraIndex::new_optional(value[1]);
-        let captures_start = ExtraIndex::new_optional(value[2]);
-        let captures_end = ExtraIndex::new_optional(value[3]);
-        let captures = captures_start
-            .zip(captures_end)
-            .map(|(x, y)| ExtraIndexRange::new(x, y));
-        let receiver = ExtraIndex::new_optional(value[4]);
-        let args_start = ExtraIndex::new_optional(value[5]);
-        let args_end = ExtraIndex::new_optional(value[6]);
-        let args = args_start
-            .zip(args_end)
-            .map(|(x, y)| ExtraIndexRange::new(x, y));
-        let call_conv_expr = NodeIndex::new_optional(value[7]);
-        let return_type_expr = NodeIndex::new_optional(value[8]);
-        let where_expr = NodeIndex::new_optional(value[9]);
-
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let (has_trailing_capture_comma, has_trailing_arg_comma, modifier) = buffer
+            .read::<BitPacked<(bool, bool, FnModifier)>>()
+            .unpack();
         Self {
             has_trailing_capture_comma,
             has_trailing_arg_comma,
             modifier,
-            context,
-            captures,
-            receiver,
-            args,
-            call_conv_expr,
-            return_type_expr,
-            where_expr,
+            context: buffer.read(),
+            captures: buffer.read(),
+            receiver: buffer.read(),
+            args: buffer.read(),
+            call_conv_expr: buffer.read(),
+            return_type_expr: buffer.read(),
+            where_expr: buffer.read(),
         }
     }
 }
@@ -3668,6 +3558,21 @@ pub enum FnArgModifier {
     NoAlias = 2,
 }
 
+impl packed_stream::DefaultPackable for FnArgModifier {}
+
+impl packed_stream::BitPackable for FnArgModifier {
+    const BITS: usize = 2;
+
+    fn pack(self) -> u32 {
+        self as u32
+    }
+
+    fn unpack(value: u32) -> Self {
+        debug_assert!(value < Self::NoAlias as u32);
+        unsafe { std::mem::transmute(value as u8) }
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FnModifier {
@@ -3678,6 +3583,21 @@ pub enum FnModifier {
     Inline = 2,
     /// no_inline
     NoInline = 3,
+}
+
+impl packed_stream::DefaultPackable for FnModifier {}
+
+impl packed_stream::BitPackable for FnModifier {
+    const BITS: usize = 2;
+
+    fn pack(self) -> u32 {
+        self as u32
+    }
+
+    fn unpack(value: u32) -> Self {
+        debug_assert!(value < Self::NoInline as u32);
+        unsafe { std::mem::transmute(value as u8) }
+    }
 }
 
 #[repr(u8)]
@@ -3703,23 +3623,40 @@ pub enum PointerType {
     OptVarOptVolatile = 8,
 }
 
+impl packed_stream::DefaultPackable for PointerType {}
+
+impl packed_stream::BitPackable for PointerType {
+    const BITS: usize = 4;
+
+    fn pack(self) -> u32 {
+        self as u32
+    }
+
+    fn unpack(value: u32) -> Self {
+        debug_assert!(value < Self::OptVarOptVolatile as u32);
+        unsafe { std::mem::transmute(value as u8) }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FieldInit {
     ident: TokenIndex,
     init_expr: NodeIndex,
 }
 
-impl Extra for FieldInit {
-    type Destructed = [u32; 2];
+impl Packable for FieldInit {
+    const LEN: usize = <(TokenIndex, NodeIndex) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [self.ident.get(), self.init_expr.get_u32()]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.ident);
+        buffer.write(self.init_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let ident = TokenIndex::new(value[0]);
-        let init_expr = NodeIndex::new_u32(value[1]);
-        Self { ident, init_expr }
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            ident: buffer.read(),
+            init_expr: buffer.read(),
+        }
     }
 }
 
@@ -3729,30 +3666,18 @@ pub struct SinglePointerPrefix {
     align_expr: NodeIndex,
 }
 
-impl Extra for SinglePointerPrefix {
-    type Destructed = [u32; 2];
+impl Packable for SinglePointerPrefix {
+    const LEN: usize = <(PointerType, NodeIndex) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [self.pointer_type as u32, self.align_expr.get_u32()]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.pointer_type);
+        buffer.write(self.align_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let pointer_type = match value[0] {
-            0 => PointerType::Default,
-            1 => PointerType::Var,
-            2 => PointerType::OptVar,
-            3 => PointerType::Volatile,
-            4 => PointerType::OptVolatile,
-            5 => PointerType::VarVolatile,
-            6 => PointerType::OptVarVolatile,
-            7 => PointerType::VarOptVolatile,
-            8 => PointerType::OptVarOptVolatile,
-            _ => unreachable!(),
-        };
-        let align_expr = NodeIndex::new_u32(value[1]);
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            pointer_type,
-            align_expr,
+            pointer_type: buffer.read(),
+            align_expr: buffer.read(),
         }
     }
 }
@@ -3764,36 +3689,45 @@ pub struct MultiPointerPrefix {
     align_expr: Option<NodeIndex>,
 }
 
-impl Extra for MultiPointerPrefix {
-    type Destructed = [u32; 3];
+impl Packable for MultiPointerPrefix {
+    const LEN: usize = <(PointerType, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [
-            self.pointer_type as u32,
-            NodeIndex::unwrap_optional(self.sentinel_expr),
-            NodeIndex::unwrap_optional(self.align_expr),
-        ]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.pointer_type);
+        buffer.write(self.sentinel_expr);
+        buffer.write(self.align_expr);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let pointer_type = match value[0] {
-            0 => PointerType::Default,
-            1 => PointerType::Var,
-            2 => PointerType::OptVar,
-            3 => PointerType::Volatile,
-            4 => PointerType::OptVolatile,
-            5 => PointerType::VarVolatile,
-            6 => PointerType::OptVarVolatile,
-            7 => PointerType::VarOptVolatile,
-            8 => PointerType::OptVarOptVolatile,
-            _ => unreachable!(),
-        };
-        let sentinel_expr = NodeIndex::new_optional(value[1]);
-        let align_expr = NodeIndex::new_optional(value[2]);
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            pointer_type,
-            sentinel_expr,
-            align_expr,
+            pointer_type: buffer.read(),
+            sentinel_expr: buffer.read(),
+            align_expr: buffer.read(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Matrix {
+    rows: NodeIndex,
+    cols: NodeIndex,
+    layout: NodeIndex,
+}
+
+impl Packable for Matrix {
+    const LEN: usize = <(NodeIndex, NodeIndex, NodeIndex) as Packable>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.rows);
+        buffer.write(self.cols);
+        buffer.write(self.layout);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            rows: buffer.read(),
+            cols: buffer.read(),
+            layout: buffer.read(),
         }
     }
 }
@@ -3804,19 +3738,18 @@ pub struct TemplateTypeExprArg {
     has_init: bool,
 }
 
-impl Extra for TemplateTypeExprArg {
-    type Destructed = [u32; 2];
+impl Packable for TemplateTypeExprArg {
+    const LEN: usize = <(NodeIndex, bool) as Packable>::LEN;
 
-    fn destruct(self) -> Self::Destructed {
-        [self.type_expr.get_u32(), self.has_init as u32]
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.type_expr);
+        buffer.write(self.has_init);
     }
 
-    fn construct(value: Self::Destructed) -> Self {
-        let type_expr = NodeIndex::new_u32(value[0]);
-        let has_init = value[1] != 0;
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
         Self {
-            type_expr,
-            has_init,
+            type_expr: buffer.read(),
+            has_init: buffer.read(),
         }
     }
 }
@@ -3987,53 +3920,32 @@ impl Parser<'_> {
         idx
     }
 
-    fn push_extra<T: Extra>(&mut self, value: T) -> ExtraIndex<T> {
+    fn push_packed<T: Packable>(&mut self, value: T) -> ExtraIndex<T> {
         let idx = ExtraIndex::new(self.extra_data.len());
-        let destructed = value.destruct();
-        destructed.write_to_vec(&mut self.extra_data);
+        let mut stream = PackedStreamWriter::new(&mut self.extra_data);
+        stream.write(value);
         idx
     }
 
-    fn push_optional_extra<T: Extra>(&mut self, value: Option<T>) -> Option<ExtraIndex<T>> {
-        value.map(|v| self.push_extra(v))
+    fn push_optional_packed<T: Packable>(&mut self, value: Option<T>) -> Option<ExtraIndex<T>> {
+        value.map(|v| self.push_packed(v))
     }
 
-    fn push_extra_list<T: Extra>(
-        &mut self,
-        values: &[T],
-    ) -> Option<(ExtraIndex<T>, ExtraIndex<T>)> {
+    fn push_packed_list<T: Packable>(&mut self, values: &[T]) -> Option<ExtraIndexRange<T>> {
         if values.is_empty() {
             return None;
         }
 
         let start = ExtraIndex::new(self.extra_data.len());
-        for value in values {
-            let destructed = value.destruct();
-            destructed.write_to_vec(&mut self.extra_data);
-        }
+        let mut stream = PackedStreamWriter::new(&mut self.extra_data);
+        stream.write_slice(values);
         let end = ExtraIndex::new(self.extra_data.len() - 1);
-
-        Some((start, end))
-    }
-
-    fn push_extra_range<T: Extra>(&mut self, values: &[T]) -> Option<ExtraIndexRange<T>> {
-        if values.is_empty() {
-            return None;
-        }
-
-        let start = ExtraIndex::new(self.extra_data.len());
-        for value in values {
-            let destructed = value.destruct();
-            destructed.write_to_vec(&mut self.extra_data);
-        }
-        let end = ExtraIndex::new(self.extra_data.len() - 1);
-
-        Some(ExtraIndexRange::new(start, end))
+        Some(ExtraIndexRange(start, end))
     }
 }
 
 fn parse_root(p: &mut Parser<'_>) -> Result<(), ()> {
-    p.push_node(TokenIndex::new(0), NodeData::Root(None, None));
+    p.push_node(TokenIndex::new(0), NodeData::Root(None));
     let mut root_nodes = vec![];
 
     // Parse all annotations and attributes.
@@ -4062,9 +3974,7 @@ fn parse_root(p: &mut Parser<'_>) -> Result<(), ()> {
     };
     root_nodes.extend(members);
 
-    if let Some((first, last)) = p.push_extra_list(&root_nodes) {
-        p.nodes[0].data = NodeData::Root(Some(first), Some(last));
-    }
+    p.nodes[0].data = NodeData::Root(p.push_packed_list(&root_nodes));
     Ok(())
 }
 
@@ -4088,8 +3998,8 @@ fn expect_decl_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         let second = members.get(1).copied();
         Ok(p.push_node(start, NodeData::BlockTwo(first, second)))
     } else {
-        let (first, last) = p.push_extra_list(&members).unwrap();
-        Ok(p.push_node(start, NodeData::Block(first, last)))
+        let members = p.push_packed_list(&members).unwrap();
+        Ok(p.push_node(start, NodeData::Block(members)))
     }
 }
 
@@ -4171,10 +4081,10 @@ fn expect_expr_block(p: &mut Parser<'_>, warn_on_semicolon: bool) -> Result<Node
                 data: NodeData::BlockTwoSemicolon(first, second),
             });
         } else {
-            let (first, last) = p.push_extra_list(&scratch).unwrap();
+            let members = p.push_packed_list(&scratch).unwrap();
             p.nodes.push(Node {
                 main_token: start,
-                data: NodeData::BlockSemicolon(first, last),
+                data: NodeData::BlockSemicolon(members),
             })
         }
     } else {
@@ -4186,10 +4096,10 @@ fn expect_expr_block(p: &mut Parser<'_>, warn_on_semicolon: bool) -> Result<Node
                 data: NodeData::BlockTwo(first, second),
             });
         } else {
-            let (first, last) = p.push_extra_list(&scratch).unwrap();
+            let members = p.push_packed_list(&scratch).unwrap();
             p.nodes.push(Node {
                 main_token: start,
-                data: NodeData::Block(first, last),
+                data: NodeData::Block(members),
             });
         }
     }
@@ -4215,8 +4125,8 @@ fn expect_struct_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         let second = members.get(1).copied();
         Ok(p.push_node(start, NodeData::BlockTwo(first, second)))
     } else {
-        let (first, last) = p.push_extra_list(&members).unwrap();
-        Ok(p.push_node(start, NodeData::Block(first, last)))
+        let members = p.push_packed_list(&members).unwrap();
+        Ok(p.push_node(start, NodeData::Block(members)))
     }
 }
 
@@ -4385,20 +4295,15 @@ fn expect_thread_local_decl_statement(p: &mut Parser<'_>) -> Result<NodeIndex, (
 
     if decls.len() == 1 {
         let decl @ DeclProtoPub {
-            first_attr,
-            last_attr: _last_attr,
+            attrs,
             is_pub,
             is_var,
             ident,
             align_expr,
         } = decls[0];
-        if first_attr.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some())
-        {
-            let decl = p.push_extra(decl);
-            let type_expr = p.push_extra(type_expr);
-            let init_expr = p.push_extra(init_expr);
-            let type_init_expr = ExtraIndexPair(type_expr, init_expr);
-            let type_init_expr = p.push_extra(type_init_expr);
+        if attrs.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some()) {
+            let decl = p.push_packed(decl);
+            let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
             Ok(p.push_node(ident, NodeData::ThreadLocalDecl(decl, type_init_expr)))
         } else if let Some(align_expr) = align_expr {
             Ok(p.push_node(ident, NodeData::ThreadLocalDeclAlign(align_expr, init_expr)))
@@ -4409,14 +4314,9 @@ fn expect_thread_local_decl_statement(p: &mut Parser<'_>) -> Result<NodeIndex, (
             ))
         }
     } else {
-        let (first, last) = p.push_extra_list(&decls).unwrap();
-        let protos = ExtraIndexRange::new(first, last);
-        let protos = p.push_extra(protos);
-
-        let type_expr = p.push_extra(type_expr);
-        let init_expr = p.push_extra(init_expr);
-        let type_init_expr = ExtraIndexPair(type_expr, init_expr);
-        let type_init_expr = p.push_extra(type_init_expr);
+        let protos = p.push_packed_list(&decls).unwrap();
+        let protos = p.push_packed(protos);
+        let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
         Ok(p.push_node(
             thread_local_token,
             NodeData::ThreadLocalDeclDestructure(protos, type_init_expr),
@@ -4487,14 +4387,9 @@ fn expect_global_decl_statement2(p: &mut Parser<'_>, proto: DeclProtoPub) -> Res
         (None, expr, semicolon_token)
     };
 
-    let (first, last) = p.push_extra_list(&protos).unwrap();
-    let protos = ExtraIndexRange::new(first, last);
-    let protos = p.push_extra(protos);
-
-    let type_expr = p.push_extra(type_expr);
-    let init_expr = p.push_extra(init_expr);
-    let type_init_expr = ExtraIndexPair(type_expr, init_expr);
-    let type_init_expr = p.push_extra(type_init_expr);
+    let protos = p.push_packed_list(&protos).unwrap();
+    let protos = p.push_packed(protos);
+    let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
     Ok(p.push_node(
         semicolon_token,
         NodeData::GlobalDeclDestructure(protos, type_init_expr),
@@ -4590,13 +4485,9 @@ fn expect_struct_field_or_global_container_decl_statement(
                     let init_expr = expect_template_expr(p)?;
                     p.expect_token(Token!(;))?;
 
-                    let (first_attr, last_attr) = match p.push_extra_list(&attrs) {
-                        Some((first_attr, last_attr)) => (Some(first_attr), Some(last_attr)),
-                        None => (None, None),
-                    };
+                    let attrs = p.push_packed_list(&attrs);
                     let proto = DeclProtoPub {
-                        first_attr,
-                        last_attr,
+                        attrs,
                         is_pub: false,
                         is_var: false,
                         ident: ident_token,
@@ -4658,15 +4549,9 @@ fn expect_struct_field_or_global_container_decl_statement(
                             let init_expr = expect_template_expr(p)?;
                             p.expect_token(Token!(;))?;
 
-                            let (first_attr, last_attr) = match p.push_extra_list(&attrs) {
-                                Some((first_attr, last_attr)) => {
-                                    (Some(first_attr), Some(last_attr))
-                                }
-                                None => (None, None),
-                            };
+                            let attrs = p.push_packed_list(&attrs);
                             let proto = DeclProtoPub {
-                                first_attr,
-                                last_attr,
+                                attrs,
                                 is_pub: false,
                                 is_var: false,
                                 ident: ident_token,
@@ -4684,13 +4569,9 @@ fn expect_struct_field_or_global_container_decl_statement(
             let init_expr = expect_template_expr(p)?;
             p.expect_token(Token!(;))?;
 
-            let (first_attr, last_attr) = match p.push_extra_list(&attrs) {
-                Some((first_attr, last_attr)) => (Some(first_attr), Some(last_attr)),
-                None => (None, None),
-            };
+            let attrs = p.push_packed_list(&attrs);
             let proto = DeclProtoPub {
-                first_attr,
-                last_attr,
+                attrs,
                 is_pub: false,
                 is_var: false,
                 ident: ident_token,
@@ -4706,13 +4587,9 @@ fn expect_struct_field_or_global_container_decl_statement(
                 unreachable!()
             }
 
-            let (first_attr, last_attr) = match p.push_extra_list(&attrs) {
-                Some((first_attr, last_attr)) => (Some(first_attr), Some(last_attr)),
-                None => (None, None),
-            };
+            let attrs = p.push_packed_list(&attrs);
             let proto = DeclProtoPub {
-                first_attr,
-                last_attr,
+                attrs,
                 is_pub: false,
                 is_var: false,
                 ident: ident_token,
@@ -4734,19 +4611,15 @@ fn emit_global_decl(
     init_expr: NodeIndex,
 ) -> NodeIndex {
     let proto @ DeclProtoPub {
-        first_attr,
-        last_attr: _last_attr,
+        attrs,
         is_pub,
         is_var,
         ident,
         align_expr,
     } = proto;
-    if first_attr.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some()) {
-        let proto = p.push_extra(proto);
-        let type_expr = p.push_extra(type_expr);
-        let init_expr = p.push_extra(init_expr);
-        let type_init_expr = ExtraIndexPair(type_expr, init_expr);
-        let type_init_expr = p.push_extra(type_init_expr);
+    if attrs.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some()) {
+        let proto = p.push_packed(proto);
+        let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
         p.push_node(ident, NodeData::GlobalDecl(proto, type_init_expr))
     } else if let Some(align_expr) = align_expr {
         p.push_node(ident, NodeData::GlobalDeclAlign(align_expr, init_expr))
@@ -4764,12 +4637,11 @@ fn emit_container_field(
     init_expr: Option<NodeIndex>,
     has_comma: bool,
 ) -> NodeIndex {
-    let attrs = p.push_extra_list(&attrs);
+    let attrs = p.push_packed_list(&attrs);
 
     if let Some(attrs) = attrs {
-        let extra_idx = p.push_extra(StructFieldProto {
-            first_attr: Some(attrs.0),
-            last_attr: Some(attrs.1),
+        let extra_idx = p.push_packed(StructFieldProto {
+            attrs: Some(attrs),
             align_expr,
             type_expr,
             init_expr,
@@ -4816,9 +4688,8 @@ fn emit_container_field(
             )
         }
     } else {
-        let extra_idx = p.push_extra(StructFieldProto {
-            first_attr: None,
-            last_attr: None,
+        let extra_idx = p.push_packed(StructFieldProto {
+            attrs: None,
             align_expr,
             type_expr,
             init_expr,
@@ -4840,12 +4711,10 @@ fn emit_container_field_inline(
     init_expr: Option<NodeIndex>,
     has_comma: bool,
 ) -> NodeIndex {
-    let attrs = p.push_extra_list(&attrs);
-
+    let attrs = p.push_packed_list(&attrs);
     if let Some(attrs) = attrs {
-        let extra_idx = p.push_extra(StructFieldProto {
-            first_attr: Some(attrs.0),
-            last_attr: Some(attrs.1),
+        let extra_idx = p.push_packed(StructFieldProto {
+            attrs: Some(attrs),
             align_expr,
             type_expr,
             init_expr,
@@ -4898,9 +4767,8 @@ fn emit_container_field_inline(
             )
         }
     } else {
-        let extra_idx = p.push_extra(StructFieldProto {
-            first_attr: None,
-            last_attr: None,
+        let extra_idx = p.push_packed(StructFieldProto {
+            attrs: None,
             align_expr,
             type_expr,
             init_expr,
@@ -4957,15 +4825,10 @@ fn expect_decl_proto_pub(
     } else {
         None
     };
-    let (first_attr, last_attr) = if let Some((first, last)) = p.push_extra_list(&attrs) {
-        (Some(first), Some(last))
-    } else {
-        (None, None)
-    };
+    let attrs = p.push_packed_list(&attrs);
 
     Ok(DeclProtoPub {
-        first_attr,
-        last_attr,
+        attrs,
         is_pub: pub_token.is_some(),
         is_var: var_token.is_some(),
         ident: ident_token,
@@ -4997,14 +4860,13 @@ fn expect_impl_block_statement(
     let cond_expr = expect_expr(p)?;
     let decl_block = expect_decl_block(p)?;
 
-    if let Some((first_attr, last_attr)) = p.push_extra_list(&attrs) {
+    if let Some(attrs) = p.push_packed_list(&attrs) {
         let impl_block = ImplBlock {
-            first_attr,
-            last_attr,
+            attrs,
             cond_expr,
             decl_block,
         };
-        let impl_block = p.push_extra(impl_block);
+        let impl_block = p.push_packed(impl_block);
         Ok(p.push_node(impl_token, NodeData::ImplBlockAttrs(impl_block)))
     } else {
         Ok(p.push_node(impl_token, NodeData::ImplBlock(cond_expr, decl_block)))
@@ -5163,8 +5025,8 @@ fn expect_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 };
                 let expr = expect_expr(p)?;
 
-                let args = p.push_extra_range(&args).unwrap();
-                let proto = p.push_extra(TemplateExprProto { args, where_expr });
+                let args = p.push_packed_list(&args).unwrap();
+                let proto = p.push_packed(TemplateExprProto { args, where_expr });
                 if trailing_comma {
                     Ok(p.push_node(with_token, NodeData::TemplateExprComma(proto, expr)))
                 } else {
@@ -5516,16 +5378,10 @@ fn expect_asm_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             ))
         }
     } else {
-        let captures = p
-            .push_extra_list(&captures)
-            .map(|(x, y)| ExtraIndexRange::new(x, y));
-        let inputs = p
-            .push_extra_list(&inputs)
-            .map(|(x, y)| ExtraIndexRange::new(x, y));
-        let outputs = p
-            .push_extra_list(&outputs)
-            .map(|(x, y)| ExtraIndexRange::new(x, y));
-        let proto = p.push_extra(AsmProto {
+        let captures = p.push_packed_list(&captures);
+        let inputs = p.push_packed_list(&inputs);
+        let outputs = p.push_packed_list(&outputs);
+        let proto = p.push_packed(AsmProto {
             has_trailing_capture_comma,
             has_trailing_input_comma,
             clobbers_expr,
@@ -6133,6 +5989,7 @@ fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 break;
             }
             modifier = match p.tag() {
+                Token!(')') => break,
                 Token!(const) => {
                     p.next();
                     FnArgModifier::Const
@@ -6187,11 +6044,11 @@ fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 
     let expr_block = expect_expr_block(p, false)?;
 
-    let context = p.push_optional_extra(context);
-    let captures = p.push_extra_range(&captures);
-    let receiver = p.push_optional_extra(receiver);
-    let args = p.push_extra_range(&args);
-    let proto = p.push_extra(FnProto {
+    let context = p.push_optional_packed(context);
+    let captures = p.push_packed_list(&captures);
+    let receiver = p.push_optional_packed(receiver);
+    let args = p.push_packed_list(&args);
+    let proto = p.push_packed(FnProto {
         has_trailing_capture_comma,
         has_trailing_arg_comma,
         modifier,
@@ -6322,11 +6179,16 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 p.expect_token(Token!(']'))?;
                 let type_expr = expect_type_expr(p)?;
                 if let Some(layout) = layout {
-                    todo!("[[row, col]: layout]T")
+                    let matrix = p.push_packed(Matrix {
+                        rows: len_expr,
+                        cols: cols_expr,
+                        layout,
+                    });
+                    return Ok(p.push_node(tok, NodeData::Matrix(matrix, type_expr)));
                 } else {
-                    let rows = p.push_extra(len_expr);
-                    let cols = p.push_extra(cols_expr);
-                    let rows_cols = p.push_extra(ExtraIndexPair(rows, cols));
+                    let rows = len_expr;
+                    let cols = cols_expr;
+                    let rows_cols = p.push_packed(PackedPair(rows, cols));
                     return Ok(p.push_node(tok, NodeData::MatrixSimple(rows_cols, type_expr)));
                 }
             }
@@ -6343,9 +6205,7 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             let type_expr = expect_type_expr(p)?;
 
             if let Some(sentinel_expr) = sentinel_expr {
-                let len_expr = p.push_extra(len_expr);
-                let sentinel_expr = p.push_extra(sentinel_expr);
-                let len_sentinel = p.push_extra(ExtraIndexPair(len_expr, sentinel_expr));
+                let len_sentinel = p.push_packed(PackedPair(len_expr, sentinel_expr));
                 return Ok(p.push_node(tok, NodeData::Array(len_sentinel, type_expr)));
             } else {
                 return Ok(p.push_node(tok, NodeData::ArraySimple(len_expr, type_expr)));
@@ -6510,9 +6370,8 @@ fn parse_single_type_expr_suffixes(
                             p.push_node(end, NodeData::Bind1(expr, bind_expr))
                         }
                     } else {
-                        let (first_expr, last_expr) = p.push_extra_list(&bind_exprs).unwrap();
-                        let bind_exprs = ExtraIndexRange::new(first_expr, last_expr);
-                        let bind_exprs = p.push_extra(bind_exprs);
+                        let bind_exprs = p.push_packed_list(&bind_exprs).unwrap();
+                        let bind_exprs = p.push_packed(bind_exprs);
                         if has_trailing_comma {
                             p.push_node(end, NodeData::BindComma(expr, bind_exprs))
                         } else {
@@ -6555,9 +6414,8 @@ fn parse_single_type_expr_suffixes(
                         p.push_node(end, NodeData::Call1(expr, bind_expr))
                     }
                 } else {
-                    let (first_expr, last_expr) = p.push_extra_list(&args_exprs).unwrap();
-                    let bind_exprs = ExtraIndexRange::new(first_expr, last_expr);
-                    let bind_exprs = p.push_extra(bind_exprs);
+                    let bind_exprs = p.push_packed_list(&args_exprs).unwrap();
+                    let bind_exprs = p.push_packed(bind_exprs);
                     if has_trailing_comma {
                         p.push_node(end, NodeData::CallComma(expr, bind_exprs))
                     } else {
@@ -6579,7 +6437,7 @@ fn expect_single_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> 
     let type_expr = expect_type_expr(p)?;
 
     if let Some(align_expr) = align_expr {
-        let prefix = p.push_extra(SinglePointerPrefix {
+        let prefix = p.push_packed(SinglePointerPrefix {
             pointer_type,
             align_expr,
         });
@@ -6603,7 +6461,7 @@ fn expect_multi_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let type_expr = expect_type_expr(p)?;
 
     if sentinel_expr.is_some() || align_expr.is_some() {
-        let prefix = p.push_extra(MultiPointerPrefix {
+        let prefix = p.push_packed(MultiPointerPrefix {
             pointer_type,
             sentinel_expr,
             align_expr,
@@ -6812,8 +6670,8 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 };
 
                 if fields.len() <= 2 {
-                    let first = p.push_extra(fields[0]);
-                    let second = p.push_optional_extra(fields.get(1).copied());
+                    let first = p.push_packed(fields[0]);
+                    let second = p.push_optional_packed(fields.get(1).copied());
                     if comma {
                         Ok(p.push_node(
                             lbrace_token,
@@ -6823,7 +6681,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                         Ok(p.push_node(lbrace_token, NodeData::FieldInitListTwo(first, second)))
                     }
                 } else {
-                    let fields = p.push_extra_range(&fields).unwrap();
+                    let fields = p.push_packed_list(&fields).unwrap();
                     if comma {
                         Ok(p.push_node(lbrace_token, NodeData::FieldInitListComma(fields)))
                     } else {
@@ -6832,7 +6690,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 }
             } else {
                 p.expect_token(Token!('}'))?;
-                let field = p.push_extra(field);
+                let field = p.push_packed(field);
                 Ok(p.push_node(lbrace_token, NodeData::FieldInitListTwo(field, None)))
             }
         }
@@ -6859,7 +6717,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                     Ok(p.push_node(lbrace_token, NodeData::ExprInitListTwo(first, second)))
                 }
             } else {
-                let exprs = p.push_extra_range(&exprs).unwrap();
+                let exprs = p.push_packed_list(&exprs).unwrap();
                 if comma {
                     Ok(p.push_node(lbrace_token, NodeData::ExprInitListComma(exprs)))
                 } else {
@@ -6969,8 +6827,8 @@ fn expect_template_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                         p.next();
                         p.expect_token(Token!(->))?;
                         let expr = expect_type_expr(p)?;
-                        let args = p.push_extra_range(&args).unwrap();
-                        let args = p.push_extra(args);
+                        let args = p.push_packed_list(&args).unwrap();
+                        let args = p.push_packed(args);
                         return Ok(
                             p.push_node(with_token, NodeData::TemplateTypeExprDots(args, expr))
                         );
@@ -6981,8 +6839,8 @@ fn expect_template_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                         p.expect_token(Token!(']'))?;
                         p.expect_token(Token!(->))?;
                         let expr = expect_type_expr(p)?;
-                        let args = p.push_extra_range(&args).unwrap();
-                        let args = p.push_extra(args);
+                        let args = p.push_packed_list(&args).unwrap();
+                        let args = p.push_packed(args);
                         return Ok(p.push_node(
                             with_token,
                             NodeData::TemplateTypeExprDotsComma(args, expr),
@@ -7007,8 +6865,8 @@ fn expect_template_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 
             p.expect_token(Token!(->))?;
             let expr = expect_type_expr(p)?;
-            let args = p.push_extra_range(&args).unwrap();
-            let args = p.push_extra(args);
+            let args = p.push_packed_list(&args).unwrap();
+            let args = p.push_packed(args);
             if comma {
                 Ok(p.push_node(with_token, NodeData::TemplateTypeExprComma(args, expr)))
             } else {
