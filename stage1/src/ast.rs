@@ -693,7 +693,6 @@ impl Ast {
                 NodeData::RawStringLiteral(_, _) => node.main_token,
                 NodeData::Container(_, _) => node.main_token,
                 NodeData::ContainerConst(_, _) => node.main_token,
-                NodeData::Namespace(_) => node.main_token,
                 NodeData::Primitive(_, _) => node.main_token,
                 NodeData::Index(ty_expr, _) => {
                     idx = ty_expr;
@@ -945,10 +944,6 @@ impl Ast {
                     continue;
                 }
                 NodeData::ContainerConst(_, block) => {
-                    idx = block;
-                    continue;
-                }
-                NodeData::Namespace(block) => {
                     idx = block;
                     continue;
                 }
@@ -1886,7 +1881,6 @@ impl Display for Ast {
                     }
                     writeln!(f, "const := true, block := {block})")?;
                 }
-                NodeData::Namespace(block) => writeln!(f, "{idx} := namespace(block := {block})")?,
                 NodeData::Primitive(id, block) => {
                     let id = self.get_string_lit(*id);
                     writeln!(f, "{idx} := #primitive({id}, block := {block})")?
@@ -2638,11 +2632,6 @@ pub enum NodeData {
     ///
     /// `main_token` is the container token.
     ContainerConst(Option<NodeIndex>, NodeIndex),
-    /// `namespace {...}`
-    /// 1. Block
-    ///
-    /// `main_token` is the `namespace` token.
-    Namespace(NodeIndex),
     /// `#primitive("...", {...})`
     /// 1. String token
     /// 2. Block
@@ -6011,7 +6000,7 @@ fn expect_namespace_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let ns_token = p.expect_token(Token!(namespace))?;
     let block = expect_block(p)?;
 
-    Ok(p.push_node(ns_token, NodeData::Namespace(block)))
+    Ok(p.push_node(ns_token, NodeData::Container(None, block)))
 }
 
 /// OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? Block

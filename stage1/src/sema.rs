@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::{Cell, UnsafeCell},
     sync::{Arc, Weak, atomic::Ordering},
 };
@@ -17,9 +18,9 @@ use crate::{
         NameStrategy, SrcLocation,
     },
     intern_pool::{
-        Capture, Decl, DeclId, DeclInner, HirInfo, Index, InternPool, Key, KeyBigIntStorage,
-        KeyInt, KeyIntStorage, KeyTag, KeyTypeNamespace, LDScopeId, LazyDeclScope, LocalPool,
-        RawCString, Scope, TypeNamespace, TypedIndex, UnorderedDeclScope, UnorderedDeclScopeInner,
+        Capture, Decl, DeclId, DeclInner, HirInfo, Index, KeyBigIntStorage, KeyInt, KeyIntStorage,
+        KeyTypeNamespace, LDScopeId, LazyDeclScope, RawCString, Scope, TypedIndex,
+        UnorderedDeclScope, UnorderedDeclScopeInner,
     },
 };
 
@@ -195,6 +196,60 @@ impl Sema {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EvalError<'a> {
+    InlineDecl,
+    MutableConstDecl,
+    DuplicateDecl(&'a str),
+    InvalidContainerStatement,
+    WrongInitializerCount { expected: usize, actual: usize },
+    ThreadLocalInConstDecl,
+    StaticVarReadInConstDecl,
+    ConstTyInVarDecl(&'a str),
+    ConstTyInThreadLocalDecl(&'a str),
+    ExpectedConstExpr,
+    InvalidTypeCoersion { from: &'a str, to: &'a str },
+    InvalidIntLiteral(&'a str),
+    IdentNotFound(&'a str),
+}
+
+impl EvalError<'_> {
+    fn as_string(&self) -> Cow<'_, str> {
+        match self {
+            Self::InlineDecl => "`inline` declaration on non-struct or union field".into(),
+            Self::MutableConstDecl => {
+                "mutable constant-evaluated declaration not allowed in current scope".into()
+            }
+            Self::DuplicateDecl(name) => format!("duplicate declaration of `{name}`").into(),
+            Self::InvalidContainerStatement => "invalid container statement".into(),
+            Self::WrongInitializerCount { expected, actual } => {
+                format!("expected `{expected}` initializers, got `{actual}`").into()
+            }
+            Self::ThreadLocalInConstDecl => {
+                "`thread_local` declaration can not be accessed in a constant-evaluated context"
+                    .into()
+            }
+            Self::StaticVarReadInConstDecl => {
+                "`static var` declaration can not be read from in a constant-evaluated context"
+                    .into()
+            }
+            Self::ConstTyInVarDecl(name) => {
+                format!("`const` type `{name}` can not be stored in a non constant-evaluated mutable declaration")
+                    .into()
+            }
+            Self::ConstTyInThreadLocalDecl(name) => {
+                format!("`const` type `{name}` can not be stored in a `thread_local` declaration").into()
+            }
+            Self::ExpectedConstExpr => "expected constant expression".into(),
+            Self::InvalidTypeCoersion { from, to } => {
+                format!("can not coerce a `{from}` to a `{to}`").into()
+            }
+            Self::InvalidIntLiteral(lit) => format!("invalid integer literal `{lit}`").into(),
+            Self::IdentNotFound(name) => format!("identifier `{name}` not found").into(),
+        }
+    }
+}
+
 pub struct SemaInner {
     pub blocks: Vec<Block>,
     pub decls: Vec<()>,
@@ -215,7 +270,7 @@ impl SemaInner {
         }
     }
 
-    fn emit_fatal_error(&self, cu: &Arc<Cu>, desc: &str) -> Result<(), CompilationError> {
+    fn emit_fatal_error(&self, cu: &Arc<Cu>, error: EvalError<'_>) -> Result<(), CompilationError> {
         let ip = cu.pool();
         let hir_info = self.hir_info().get_from_pool(ip);
         let ast_info = hir_info.ast_info.get_from_pool(ip);
@@ -227,45 +282,11 @@ impl SemaInner {
         let span = span_start..span_end;
 
         let report = [Level::ERROR
-            .primary_title(desc)
+            .primary_title(error.as_string())
             .element(Snippet::source(source).annotation(AnnotationKind::Context.span(span)))];
         cu.emit_report(&report, ReportKind::FatalError);
 
         Err(CompilationError)
-    }
-
-    fn emit_error(&self, cu: &Arc<Cu>, desc: &str) {
-        let ip = cu.pool();
-        let hir_info = self.hir_info().get_from_pool(ip);
-        let ast_info = hir_info.ast_info.get_from_pool(ip);
-        let ast = ast_info.id.get_from_pool(ip);
-        let source = ast.get_source();
-
-        let span_start = self.src_loc.byte_start as usize;
-        let span_end = span_start + self.src_loc.byte_len as usize;
-        let span = span_start..span_end;
-
-        let report = [Level::ERROR
-            .primary_title(desc)
-            .element(Snippet::source(source).annotation(AnnotationKind::Context.span(span)))];
-        cu.emit_report(&report, ReportKind::FatalError);
-    }
-
-    fn emit_warning(&self, cu: &Arc<Cu>, desc: &str) {
-        let ip = cu.pool();
-        let hir_info = self.hir_info().get_from_pool(ip);
-        let ast_info = hir_info.ast_info.get_from_pool(ip);
-        let ast = ast_info.id.get_from_pool(ip);
-        let source = ast.get_source();
-
-        let span_start = self.src_loc.byte_start as usize;
-        let span_end = span_start + self.src_loc.byte_len as usize;
-        let span = span_start..span_end;
-
-        let report = [Level::WARNING
-            .primary_title(desc)
-            .element(Snippet::source(source).annotation(AnnotationKind::Context.span(span)))];
-        cu.emit_report(&report, ReportKind::FatalError);
     }
 
     fn push_block(&mut self, mut block: Block) {
@@ -422,12 +443,12 @@ async fn sema_block<'a>(
             Hir::EnsureDeclsInit => {
                 let block_idx = inner.block_idx;
                 let block = &mut inner.blocks[block_idx];
-                let got = block.tmp_decl_idx as usize;
+                let actual = block.tmp_decl_idx as usize;
                 let expected = block.tmp_decls.len();
-                if got != expected {
+                if actual != expected {
                     inner.emit_fatal_error(
                         cu,
-                        &format!("expected `{expected}` initializers, got `{got}`"),
+                        EvalError::WrongInitializerCount { expected, actual },
                     )?;
                     unreachable!();
                 }
@@ -631,16 +652,10 @@ async fn sema_container<'a>(
                         _ => decl_type,
                     };
                     if is_var && decl_type == DeclType::Const {
-                        inner.emit_fatal_error(
-                            cu,
-                            "mutable constant-evaluated declarations are only allowed in functions",
-                        )?
+                        inner.emit_fatal_error(cu, EvalError::MutableConstDecl)?
                     }
                     if is_inline && (decl_type != DeclType::Normal) {
-                        inner.emit_fatal_error(
-                            cu,
-                            "`inline` qualifier can only be applied to struct and union fields",
-                        )?
+                        inner.emit_fatal_error(cu, EvalError::InlineDecl)?
                     }
 
                     let name = ast.get_ident(ident);
@@ -649,7 +664,7 @@ async fn sema_container<'a>(
                     let name = local_ip.intern_cstring(&name).await;
                     if container_decls.contains_key(&name) || scope_decl_map.contains_key(&name) {
                         let name = unsafe { name.as_str() };
-                        inner.emit_fatal_error(cu, &format!("duplicate identifier `{name}`"))?
+                        inner.emit_fatal_error(cu, EvalError::DuplicateDecl(name))?
                     }
 
                     let decl = Decl {
@@ -673,7 +688,7 @@ async fn sema_container<'a>(
                 }
             }
             Hir::ConstBlock(_) => const_blocks.push((inner.src_loc, hir_idx)),
-            _ => inner.emit_fatal_error(cu, "statement not allowed in the root of a container")?,
+            _ => inner.emit_fatal_error(cu, EvalError::InvalidContainerStatement)?,
         }
     }
 
@@ -743,19 +758,23 @@ async fn sema_namespace<'a>(
     };
     let scope_id = ip.intern_udscope(scope).await;
 
-    let parent_name = unsafe { inner.qualified_name().as_str() };
-    let qualified_name = match name_strategy {
-        NameStrategy::Parent => parent_name.to_string(),
-        NameStrategy::Decl => {
-            let block = &inner.blocks[inner.block_idx];
-            let decl_name = block.tmp_decls[block.tmp_decl_idx as usize].name;
-            let decl_name = unsafe { decl_name.as_str() };
-            format!("{parent_name}.{decl_name}\0")
-        }
-        NameStrategy::Anon => format!("{parent_name}.__namespace_{}\0", decl_idx.get()),
+    let qualified_name = if name_strategy == NameStrategy::Parent {
+        inner.qualified_name()
+    } else {
+        let parent_name = unsafe { inner.qualified_name().as_str() };
+        let qualified_name = match name_strategy {
+            NameStrategy::Parent => unreachable!(),
+            NameStrategy::Decl => {
+                let block = &inner.blocks[inner.block_idx];
+                let decl_name = block.tmp_decls[block.tmp_decl_idx as usize].name;
+                let decl_name = unsafe { decl_name.as_str() };
+                format!("{parent_name}.{decl_name}\0")
+            }
+            NameStrategy::Anon => format!("{parent_name}.__namespace_{}\0", decl_idx.get()),
+        };
+        ip.intern_cstring(&qualified_name).await
     };
-    println!("{qualified_name}");
-    let qualified_name = ip.intern_cstring(&qualified_name).await;
+    println!("{}", unsafe { qualified_name.as_str() });
 
     let ns_id = ip
         .intern_type_namespace(KeyTypeNamespace {
@@ -809,7 +828,7 @@ async fn sema_init_decl<'a>(
 
     let value = inner.get_immediate(value_idx);
     if value.is_none() && inner.block_is_const() {
-        inner.emit_fatal_error(cu, "expected a constant expression")?
+        inner.emit_fatal_error(cu, EvalError::ExpectedConstExpr)?
     }
 
     match value {
@@ -834,14 +853,35 @@ async fn sema_init_decl<'a>(
                 let value_ty_name = unsafe { ip.get_type_name(value_ty).as_str() };
                 inner.emit_fatal_error(
                     cu,
-                    &format!("type coersion from `{ty_name}` to `{value_ty_name}` not implemented"),
+                    EvalError::InvalidTypeCoersion {
+                        from: value_ty_name,
+                        to: ty_name,
+                    },
                 )?
             }
+
+            let coerced = value;
+            let coerced_ty = ip.get_type_of(coerced);
+            let ty_is_const = ip.type_is_const(coerced_ty);
 
             let resolved_name = lookup_name(cu, sema, inner, name, false).await?;
             match resolved_name {
                 ResolvedName::Decl(decl_id) => {
                     let decl = decl_id.get_from_pool(ip);
+                    if ty_is_const {
+                        if decl.is_var {
+                            let ty_name = unsafe { ip.get_type_name(coerced_ty).as_str() };
+                            inner.emit_fatal_error(cu, EvalError::ConstTyInVarDecl(ty_name))?;
+                        }
+                        if decl.kind == DeclType::ThreadLocal {
+                            let ty_name = unsafe { ip.get_type_name(coerced_ty).as_str() };
+                            inner.emit_fatal_error(
+                                cu,
+                                EvalError::ConstTyInThreadLocalDecl(ty_name),
+                            )?;
+                        }
+                    }
+
                     let mut decl_inner = decl.lock.write().await;
                     decl_inner.resolved = true;
                     decl_inner.value = value;
@@ -890,7 +930,7 @@ async fn sema_int_literal<'a>(
     let value = match value {
         Some(v) => v,
         None => {
-            inner.emit_fatal_error(cu, &format!("invalid integer literal `{literal}`"))?;
+            inner.emit_fatal_error(cu, EvalError::InvalidIntLiteral(&literal))?;
             unreachable!()
         }
     };
@@ -997,13 +1037,11 @@ async fn lookup_name<'a>(
     resolve: bool,
 ) -> Result<ResolvedName, CompilationError> {
     let ip = cu.pool();
-    let mut block_ids = inner.block_idx;
+    let mut block_idx = inner.block_idx;
     loop {
-        let block = &inner.blocks[block_ids];
+        let block = &inner.blocks[block_idx];
         match block.kind {
-            BlockKind::FileRoot => {
-                inner.emit_fatal_error(cu, "cannot resolve name at the file root")?
-            }
+            BlockKind::FileRoot => break,
             BlockKind::Namespace => {
                 let scope = match inner.scope() {
                     Scope::Type(scope_id) => scope_id.get_from_pool(ip),
@@ -1034,6 +1072,7 @@ async fn lookup_name<'a>(
             BlockKind::LazyDecl => {
                 let scope = match inner.scope() {
                     Scope::Lazy(scope_id) => scope_id.get_from_pool(ip),
+                    Scope::Type(_) => break,
                     _ => unreachable!(),
                 };
 
@@ -1054,13 +1093,13 @@ async fn lookup_name<'a>(
         };
 
         match block.parent_block {
-            Some(parent) => block_ids = parent as usize,
+            Some(parent) => block_idx = parent as usize,
             None => break,
         }
     }
 
     let name = unsafe { name.as_str() };
-    inner.emit_fatal_error(cu, &format!("identifier not found `{}`", name))?;
+    inner.emit_fatal_error(cu, EvalError::IdentNotFound(name))?;
     unreachable!()
 }
 
@@ -1094,17 +1133,11 @@ async fn sema_load_ident<'a>(
                     DeclType::Normal => unreachable!(),
                     DeclType::Const => {}
                     DeclType::ThreadLocal => {
-                        inner.emit_fatal_error(
-                            cu,
-                            "`thread_local` declaration is not a constant expression",
-                        )?;
+                        inner.emit_fatal_error(cu, EvalError::ThreadLocalInConstDecl)?;
                     }
                     DeclType::Static => {
                         if decl.is_var {
-                            inner.emit_fatal_error(
-                                cu,
-                                "`var` declaration is not a constant expression",
-                            )?;
+                            inner.emit_fatal_error(cu, EvalError::StaticVarReadInConstDecl)?;
                         }
                     }
                 }

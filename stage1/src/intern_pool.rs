@@ -495,7 +495,7 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TypeFlags: u16 {
         const Const = 1 << 0;
-        const Unsized = 1 << 1;
+        const PtrOnly = 1 << 1;
         const Generic = 1 << 2;
     }
 }
@@ -1649,6 +1649,7 @@ impl InternPool {
             KeyTag::TypeAnyInt
                 | KeyTag::TypeAnyFloat
                 | KeyTag::TypeAnyOpaque
+                | KeyTag::TypeAnyType
                 | KeyTag::TypeBool
                 | KeyTag::TypeChar
                 | KeyTag::TypeNaturalInt
@@ -1674,6 +1675,120 @@ impl InternPool {
                 | KeyTag::TypeTypeId
                 | KeyTag::TypeUndefined
         )
+    }
+
+    pub fn type_is_ptr_only(&self, idx: Index) -> bool {
+        let tag = self.get_tag(idx);
+        match tag {
+            KeyTag::TypeAnyInt => false,
+            KeyTag::TypeAnyFloat => false,
+            KeyTag::TypeAnyOpaque => {
+                let ty = self.get_type_any_opaque(idx);
+                ty.flags.contains(TypeFlags::PtrOnly)
+            }
+            KeyTag::TypeAnyType => false,
+            KeyTag::TypeBool => false,
+            KeyTag::TypeChar => false,
+            KeyTag::TypeNaturalInt => false,
+            KeyTag::TypePointerInt => false,
+            KeyTag::TypeFixedWidthInt => false,
+            KeyTag::TypeFloat => false,
+            KeyTag::TypeComplex => false,
+            KeyTag::TypeQuat => false,
+            KeyTag::TypeDQuat => false,
+            KeyTag::TypeNamespace => false,
+            KeyTag::TypeNoReturn => false,
+            KeyTag::TypeNull => false,
+            KeyTag::TypeSinglePointer => false,
+            KeyTag::TypeMultiPointer => false,
+            KeyTag::TypeRawptr => false,
+            KeyTag::TypeSlice => true,
+            KeyTag::TypeString => true,
+            KeyTag::TypeCString => true,
+            KeyTag::TypeVoid => false,
+            KeyTag::TypeVector => false,
+            KeyTag::TypeMatrix => false,
+            KeyTag::TypeType => false,
+            KeyTag::TypeTypeId => false,
+            KeyTag::TypeUndefined => false,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn type_is_generic(&self, idx: Index) -> bool {
+        let tag = self.get_tag(idx);
+        match tag {
+            KeyTag::TypeAnyInt => false,
+            KeyTag::TypeAnyFloat => false,
+            KeyTag::TypeAnyOpaque => {
+                let ty = self.get_type_any_opaque(idx);
+                ty.flags.contains(TypeFlags::Generic)
+            }
+            KeyTag::TypeAnyType => true,
+            KeyTag::TypeBool => false,
+            KeyTag::TypeChar => false,
+            KeyTag::TypeNaturalInt => false,
+            KeyTag::TypePointerInt => false,
+            KeyTag::TypeFixedWidthInt => false,
+            KeyTag::TypeFloat => false,
+            KeyTag::TypeComplex => false,
+            KeyTag::TypeQuat => false,
+            KeyTag::TypeDQuat => false,
+            KeyTag::TypeNamespace => false,
+            KeyTag::TypeNoReturn => false,
+            KeyTag::TypeNull => false,
+            KeyTag::TypeSinglePointer => todo!(),
+            KeyTag::TypeMultiPointer => todo!(),
+            KeyTag::TypeRawptr => false,
+            KeyTag::TypeSlice => todo!(),
+            KeyTag::TypeString => false,
+            KeyTag::TypeCString => false,
+            KeyTag::TypeVoid => false,
+            KeyTag::TypeVector => todo!(),
+            KeyTag::TypeMatrix => todo!(),
+            KeyTag::TypeType => false,
+            KeyTag::TypeTypeId => false,
+            KeyTag::TypeUndefined => false,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn type_is_const(&self, idx: Index) -> bool {
+        let tag = self.get_tag(idx);
+        match tag {
+            KeyTag::TypeAnyInt => true,
+            KeyTag::TypeAnyFloat => true,
+            KeyTag::TypeAnyOpaque => {
+                let ty = self.get_type_any_opaque(idx);
+                ty.flags.contains(TypeFlags::Const)
+            }
+            KeyTag::TypeAnyType => true,
+            KeyTag::TypeBool => false,
+            KeyTag::TypeChar => false,
+            KeyTag::TypeNaturalInt => false,
+            KeyTag::TypePointerInt => false,
+            KeyTag::TypeFixedWidthInt => false,
+            KeyTag::TypeFloat => false,
+            KeyTag::TypeComplex => false,
+            KeyTag::TypeQuat => false,
+            KeyTag::TypeDQuat => false,
+            KeyTag::TypeNamespace => true,
+            KeyTag::TypeNoReturn => true,
+            KeyTag::TypeNull => true,
+            KeyTag::TypeSinglePointer => todo!(),
+            KeyTag::TypeMultiPointer => todo!(),
+            KeyTag::TypeRawptr => false,
+            KeyTag::TypeSlice => todo!(),
+            KeyTag::TypeString => false,
+            KeyTag::TypeCString => false,
+            KeyTag::TypeVoid => false,
+            KeyTag::TypeVector => todo!(),
+            KeyTag::TypeMatrix => todo!(),
+            KeyTag::TypeType => true,
+            KeyTag::TypeTypeId => false,
+            KeyTag::TypeUndefined => true,
+            _ => unreachable!(),
+        }
     }
 
     pub fn get_type_of(&self, idx: Index) -> Index {
@@ -2326,14 +2441,14 @@ impl LocalPoolInner {
                             KeyTag::TypeNoReturn => TypeFlags::Const,
                             KeyTag::TypeNull => TypeFlags::Const,
                             KeyTag::TypeSinglePointer => todo!(),
-                            KeyTag::TypeMultiPointer => TypeFlags::empty(),
+                            KeyTag::TypeMultiPointer => todo!(),
                             KeyTag::TypeRawptr => TypeFlags::empty(),
                             KeyTag::TypeSlice => unreachable!(),
                             KeyTag::TypeString => unreachable!(),
                             KeyTag::TypeCString => unreachable!(),
                             KeyTag::TypeVoid => unreachable!(),
-                            KeyTag::TypeVector => TypeFlags::empty(),
-                            KeyTag::TypeMatrix => TypeFlags::empty(),
+                            KeyTag::TypeVector => todo!(),
+                            KeyTag::TypeMatrix => todo!(),
                             KeyTag::TypeType => TypeFlags::Const,
                             KeyTag::TypeTypeId => TypeFlags::empty(),
                             KeyTag::TypeUndefined => TypeFlags::Const,
@@ -2359,9 +2474,9 @@ impl LocalPoolInner {
                         };
 
                         let suffix = format!("({})", global.get_type_name(idx).as_str());
-                        ("#", suffix, flags | TypeFlags::Unsized)
+                        ("#", suffix, flags | TypeFlags::PtrOnly)
                     }
-                    None => ("", "".to_string(), TypeFlags::Unsized),
+                    None => ("", "".to_string(), TypeFlags::PtrOnly),
                 };
 
                 let name = format!("{prefix}any_opaque{suffix}\0");
@@ -2579,7 +2694,7 @@ impl LocalPoolInner {
                     .namespace_types
                     .write_element_raw(list_idx, TypeNamespace { id, name, scope });
 
-                global.sublist_idx.write_element_raw(idx.get(), 0);
+                global.sublist_idx.write_element_raw(idx.get(), list_idx);
                 global.tags.write_element(tag_idx, KeyTag::TypeNamespace);
                 shard.insert(Key::TypeNamespace(key), idx);
             }

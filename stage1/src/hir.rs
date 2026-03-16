@@ -1137,12 +1137,7 @@ fn lower_ast_root(
     } else {
         let mut nodes = vec![];
         nodes.push(builder.push_node(Hir::AstInfo(ast_idx)));
-        nodes.extend(lower_ast_namespace(
-            builder,
-            node_idx,
-            true,
-            NameStrategy::Parent,
-        )?);
+        nodes.extend(lower_ast_root_namespace(builder, node_idx)?);
         nodes.push(builder.push_node(Hir::BreakInline(*nodes.last().unwrap())));
         let nodes = builder.push_packed_list(&nodes);
         builder.patch_node(block, Hir::InlineBlock(nodes));
@@ -1150,32 +1145,16 @@ fn lower_ast_root(
     Ok(block)
 }
 
-fn lower_ast_namespace(
+fn lower_ast_root_namespace(
     builder: &mut Builder<'_>,
     node_idx: NodeIndex,
-    is_root: bool,
-    name_strategy: NameStrategy,
 ) -> Result<Vec<HirIdx>, CompilationError> {
-    if is_root {
-        assert_eq!(name_strategy, NameStrategy::Parent);
-    }
-
     let mut ir_idxs = vec![];
     ir_idxs.extend(builder.set_dbg_loc(node_idx));
 
     let node = builder.ast.get_node(node_idx);
     let mut members = match node.data {
-        NodeData::Root(members) => {
-            assert!(is_root);
-            AstRangeIterator::Many(members.unwrap())
-        }
-        NodeData::Namespace(block) => match builder.ast.get_node(block).data {
-            NodeData::BlockTwo(first, second) => AstRangeIterator::Two([first, second]),
-            NodeData::BlockTwoSemicolon(first, second) => AstRangeIterator::Two([first, second]),
-            NodeData::Block(members) => AstRangeIterator::Many(members),
-            NodeData::BlockSemicolon(members) => AstRangeIterator::Many(members),
-            _ => unreachable!(),
-        },
+        NodeData::Root(members) => AstRangeIterator::Many(members.unwrap()),
         _ => unreachable!(),
     };
 
@@ -1187,7 +1166,7 @@ fn lower_ast_namespace(
     }
     let ir_members = builder.push_packed_list(&ir_members);
     let ir_members = builder.push_packed(ir_members);
-    builder.patch_node(ir_idx, Hir::Namespace(name_strategy, ir_members));
+    builder.patch_node(ir_idx, Hir::Namespace(NameStrategy::Parent, ir_members));
 
     Ok(ir_idxs)
 }
@@ -1224,7 +1203,6 @@ fn lower_ast_const_stmt(
     stmt_members.push(ir_idx);
 
     let mut block_members = vec![];
-    block_members.extend(builder.set_dbg_loc(node_idx));
     let node = builder.ast.get_node(node_idx);
     match node.data {
         NodeData::Label(_) => todo!(),
@@ -1243,8 +1221,8 @@ fn lower_ast_const_stmt(
         _ => unreachable!(),
     }
 
-    let ir_members = builder.push_packed_list(&block_members);
-    builder.patch_node(ir_idx, Hir::ConstBlock(ir_members));
+    let block_members = builder.push_packed_list(&block_members);
+    builder.patch_node(ir_idx, Hir::ConstBlock(block_members));
 
     Ok(stmt_members)
 }
@@ -1446,8 +1424,9 @@ fn lower_ast_expr(
         NodeData::IntLiteral => lower_ast_expr_int_literal(builder, node_idx),
         NodeData::StringLiteral => lower_ast_expr_string_literal(builder, node_idx),
         NodeData::RawStringLiteral(_, _) => todo!(),
-        NodeData::Container(_, _) | NodeData::ContainerConst(_, _) => todo!(),
-        NodeData::Namespace(_) => todo!(),
+        NodeData::Container(_, _) | NodeData::ContainerConst(_, _) => {
+            lower_ast_expr_container(builder, node_idx, kind)
+        }
         NodeData::Primitive(_, _) => todo!(),
         NodeData::Index(_, _) => todo!(),
         NodeData::TypeBinarySuffix(_, _) => todo!(),
@@ -1898,6 +1877,87 @@ fn lower_ast_expr_string_literal(
     nodes.extend(builder.set_dbg_loc(node_idx));
     nodes.push(builder.push_node(Hir::StringLiteral(node.main_token)));
     Ok(nodes)
+}
+
+fn lower_ast_expr_container(
+    builder: &mut Builder<'_>,
+    node_idx: NodeIndex,
+    kind: ExprKind,
+) -> Result<Vec<HirIdx>, CompilationError> {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum ContainerKind {
+        Enum(bool),
+        Namespace,
+        Opaque(bool),
+        Struct(bool),
+        Union(bool),
+    }
+
+    let name_strategy = match kind {
+        ExprKind::Statement | ExprKind::LValue | ExprKind::RValue => NameStrategy::Anon,
+        ExprKind::RValueInit => NameStrategy::Decl,
+        ExprKind::RValueRet => NameStrategy::Parent,
+    };
+
+    let node = builder.ast.get_node(node_idx);
+    let container_kind = match builder.ast.get_token(node.main_token).tag {
+        Token!(enum) => ContainerKind::Enum(matches!(node.data, NodeData::ContainerConst(_, _))),
+        Token!(namespace) => ContainerKind::Namespace,
+        Token!(opaque) => {
+            ContainerKind::Opaque(matches!(node.data, NodeData::ContainerConst(_, _)))
+        }
+        Token!(struct) => {
+            ContainerKind::Struct(matches!(node.data, NodeData::ContainerConst(_, _)))
+        }
+        Token!(union) => ContainerKind::Union(matches!(node.data, NodeData::ContainerConst(_, _))),
+        _ => unreachable!(),
+    };
+    let (layout, block) = match node.data {
+        NodeData::Container(layout, block) => (layout, block),
+        NodeData::ContainerConst(layout, block) => (layout, block),
+        _ => unreachable!(),
+    };
+    let mut members = match builder.ast.get_node(block).data {
+        NodeData::BlockTwo(first, second) => AstRangeIterator::Two([first, second]),
+        NodeData::BlockTwoSemicolon(first, second) => AstRangeIterator::Two([first, second]),
+        NodeData::Block(members) => AstRangeIterator::Many(members),
+        NodeData::BlockSemicolon(members) => AstRangeIterator::Many(members),
+        _ => unreachable!(),
+    };
+    debug_assert!(container_kind != ContainerKind::Namespace || layout.is_none());
+
+    let mut expr_members = vec![];
+    expr_members.extend(builder.set_dbg_loc(node_idx));
+
+    let ir_idx = builder.push_node(Hir::Noop);
+    expr_members.push(ir_idx);
+
+    let mut block_members = vec![];
+    let layout: Option<HirIdx> = match layout {
+        Some(_) => {
+            debug_assert_ne!(container_kind, ContainerKind::Namespace);
+            todo!();
+        }
+        None => None,
+    };
+
+    while let Some(member) = members.next(builder.ast) {
+        block_members.extend(lower_ast_stmt(builder, member)?);
+    }
+
+    let block_members = builder.push_packed_list(&block_members);
+    let node = match container_kind {
+        ContainerKind::Enum(_) => todo!(),
+        ContainerKind::Namespace => {
+            Hir::Namespace(name_strategy, builder.push_packed(block_members))
+        }
+        ContainerKind::Opaque(_) => todo!(),
+        ContainerKind::Struct(_) => todo!(),
+        ContainerKind::Union(_) => todo!(),
+    };
+    builder.patch_node(ir_idx, node);
+
+    Ok(expr_members)
 }
 
 fn lower_ast_expr_call(
