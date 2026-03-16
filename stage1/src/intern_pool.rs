@@ -2305,7 +2305,7 @@ impl LocalPoolInner {
                 shard.insert(Key::TypeAnyFloat, idx);
             },
             Key::TypeAnyOpaque(key @ KeyTypeAnyOpaque { metadata }) => unsafe {
-                let (suffix, flags) = match metadata {
+                let (prefix, suffix, flags) = match metadata {
                     Some(metadata_idx) => {
                         let metadata_tag = global.get_tag(metadata_idx);
                         let flags = match metadata_tag {
@@ -2331,7 +2331,7 @@ impl LocalPoolInner {
                             KeyTag::TypeSlice => unreachable!(),
                             KeyTag::TypeString => unreachable!(),
                             KeyTag::TypeCString => unreachable!(),
-                            KeyTag::TypeVoid => TypeFlags::empty(),
+                            KeyTag::TypeVoid => unreachable!(),
                             KeyTag::TypeVector => TypeFlags::empty(),
                             KeyTag::TypeMatrix => TypeFlags::empty(),
                             KeyTag::TypeType => TypeFlags::Const,
@@ -2358,13 +2358,13 @@ impl LocalPoolInner {
                             | KeyTag::Union => unreachable!(),
                         };
 
-                        let suffix = format!("::[{}]", global.get_type_name(idx).as_str());
-                        (suffix, flags | TypeFlags::Unsized)
+                        let suffix = format!("({})", global.get_type_name(idx).as_str());
+                        ("#", suffix, flags | TypeFlags::Unsized)
                     }
-                    None => ("".to_string(), TypeFlags::Unsized),
+                    None => ("", "".to_string(), TypeFlags::Unsized),
                 };
 
-                let name = format!("any_opaque{suffix}\0");
+                let name = format!("{prefix}any_opaque{suffix}\0");
                 let name = self.intern_cstring(&name).await;
 
                 let id = global.types_count.fetch_add(1, Ordering::Relaxed);

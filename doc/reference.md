@@ -280,9 +280,7 @@ OuterAnnotation <- POUND LBRACKET EQUAL Expr RBRACKET
 
 AssignExpr <- Expr (AssignOp Expr / (COMMA Expr)+ EQUAL Expr (COMMA Expr)*)?
 
-Expr <- TemplateExpr
-
-TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? RangeExpr
+Expr <- RangeExpr
 
 RangeExpr <- BoolOrExpr (DOT2 BoolOrExpr? / DOT2EQUAL BoolOrExpr) / (DOT2 / DOT2EQUAL) BoolOrExpr
 
@@ -367,7 +365,6 @@ PrimaryTypeExpr
      / PrimitiveTypeExpr
      / StructTypeExpr
      / UnionTypeExpr
-     / TemplateTypeExpr
 
 IfTypeExpr <- TODO
 
@@ -399,8 +396,6 @@ PrimitiveTypeExpr <- KEYWORD_primitive LPAREN STRING_LITERAL COMMA Block RPAREN
 StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
 UnionTypeExpr <- KEYWORD_union (LPAREN Expr RPAREN)? KEYWORD_const? Block
-
-TemplateTypeExpr <- KEYWORD_with LBRACKET (TemplateTypeExprParamList (COMMA DOT3 COMMA?)? / (DOT3 COMMA?)?) RBRACKET MINUSARROW TypeExpr
 
 # *** Operators ***
 
@@ -492,20 +487,6 @@ MacroCallArguments
      / EXCLAMATIONMARK LBRACE TokenSequence RBRACE
 
 FnCallArguments <- LPAREN ExprList RPAREN
-
-# *** Templates ***
-
-TemplateExprPrefix <- KEYWORD_with LBRACKET TemplateExprParamList RBRACKET
-
-TemplateExprConstraint <- KEYWORD_where Expr
-
-TemplateExprParamList <- (TemplateExprParam COMMA)* TemplateExprParam?
-
-TemplateExprParam <- IDENTIFIER COLON TypeExpr (EQUAL Expr)?
-
-TemplateTypeExprParamList <- (TemplateTypeExprParam COMMA)* TemplateTypeExprParam?
-
-TemplateTypeExprParam <- TypeExpr (EQUAL DOT3)?
 
 # *** Assembly ***
 
@@ -810,7 +791,6 @@ KEYWORD_var           <-       'var'           end_of_word
 KEYWORD_volatile      <-       'volatile'      end_of_word
 KEYWORD_where         <-       'where'         end_of_word
 KEYWORD_while         <-       'while'         end_of_word
-KEYWORD_with          <-       'with'          end_of_word
 
 Keyword 
     <- KEYWORD_align / KEYWORD_and / KEYWORD_asm
@@ -826,5 +806,5 @@ Keyword
      / KEYWORD_struct / KEYWORD_switch / KEYWORD_thread_local
      / KEYWORD_throw / KEYWORD_try / KEYWORD_union
      / KEYWORD_unreachable / KEYWORD_var / KEYWORD_volatile
-     / KEYWORD_where / KEYWORD_while / KEYWORD_with
+     / KEYWORD_where / KEYWORD_while
 ```

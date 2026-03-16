@@ -137,7 +137,6 @@ pub enum Tag {
     KwVolatile,              // volatile
     KwWhere,                 // where
     KwWhile,                 // while
-    KwWith,                  // with
 }
 
 impl Tag {
@@ -255,7 +254,6 @@ impl Tag {
         ("volatile", Self::KwVolatile),
         ("where", Self::KwWhere),
         ("while", Self::KwWhile),
-        ("with", Self::KwWith),
     ];
 
     const KEYWORDS: &[(&str, Self)] = &[
@@ -303,7 +301,6 @@ impl Tag {
         ("volatile", Self::KwVolatile),
         ("where", Self::KwWhere),
         ("while", Self::KwWhile),
-        ("with", Self::KwWith),
     ];
 
     pub fn as_lexeme(self) -> Option<&'static str> {
@@ -432,7 +429,6 @@ impl Tag {
             Tag::KwVolatile => Some("volatile"),
             Tag::KwWhere => Some("where"),
             Tag::KwWhile => Some("while"),
-            Tag::KwWith => Some("with"),
         }
     }
 

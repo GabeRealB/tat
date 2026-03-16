@@ -108,12 +108,12 @@ impl Packable for DeclProto {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SingleDecl {
+pub struct DeclInfo {
     pub decl_type: DeclType,
     pub prototype: DeclProto,
 }
 
-impl Packable for SingleDecl {
+impl Packable for DeclInfo {
     const LEN: usize = <(BitPacked<DeclType>, DeclProto)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
@@ -127,6 +127,23 @@ impl Packable for SingleDecl {
         Self {
             decl_type,
             prototype,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NameStrategy {
+    Parent,
+    Decl,
+    Anon,
+}
+
+impl Display for NameStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameStrategy::Parent => write!(f, ".parent"),
+            NameStrategy::Decl => write!(f, ".decl"),
+            NameStrategy::Anon => write!(f, ".anon"),
         }
     }
 }
@@ -248,7 +265,7 @@ pub enum Hir {
     AstInfo(TypedIndex<AstInfo>),
     DbgLocation(SrcLocation),
 
-    Namespace(Option<ExtraIndexRange<HirIdx>>),
+    Namespace(NameStrategy, ExtraIndex<Option<ExtraIndexRange<HirIdx>>>),
     Declarations(Option<ExtraIndexRange<HirIdx>>),
 
     PushDeclType(HirIdx),
@@ -256,7 +273,7 @@ pub enum Hir {
     PushDeclAnnotation(u32, HirIdx),
     InitDecl(HirIdx),
     EnsureDeclsInit,
-    Declaration(ExtraIndex<SingleDecl>),
+    Declaration(ExtraIndex<DeclInfo>),
 
     InlineBlock(Option<ExtraIndexRange<HirIdx>>),
     LazyBlock(Option<ExtraIndexRange<HirIdx>>),
@@ -330,7 +347,7 @@ pub enum Hir {
     NegWrap(HirIdx),
     Destructure(HirIdx),
 
-    AnyOpaque(Option<HirIdx>),
+    AnyOpaque,
     Bool {
         width: u16,
     },
@@ -402,7 +419,7 @@ impl HirChunkView<'_> {
     pub fn block_range_iter(&self, idx: HirIdx) -> HirRangeIterator {
         let node = self.get_node(idx);
         match node {
-            Hir::Namespace(range) => range.into(),
+            Hir::Namespace(_, range) => self.get_packed(range).into(),
             Hir::Declarations(range) => range.into(),
             Hir::InlineBlock(range) => range.into(),
             Hir::LazyBlock(range) => range.into(),
@@ -457,12 +474,13 @@ impl HirChunkView<'_> {
                 writeln!(f, "dbg_location({byte_start}..{byte_end})")?;
             }
 
-            Hir::Namespace(members) => {
+            Hir::Namespace(name_strategy, members) => {
+                let members = self.get_packed(members);
                 let mut iter = HirRangeIterator::Many(members);
                 if iter.is_empty() {
-                    writeln!(f, "namespace {{}}")?
+                    writeln!(f, "namespace({name_strategy}) {{}}")?
                 } else {
-                    writeln!(f, "namespace {{")?;
+                    writeln!(f, "namespace({name_strategy}) {{")?;
                     while let Some(member) = iter.next(*self) {
                         self.fmt_node(f, pool, member, helper, nesting + 1)?;
                     }
@@ -495,7 +513,7 @@ impl HirChunkView<'_> {
                 let ast_idx = helper.get_ast();
                 let ast_info = ast_idx.get_from_pool(pool);
                 let ast = pool.get_ast(ast_info.id);
-                let SingleDecl {
+                let DeclInfo {
                     decl_type,
                     prototype:
                         DeclProto {
@@ -653,10 +671,7 @@ impl HirChunkView<'_> {
             Hir::NegWrap(ir_index) => writeln!(f, "neg_wrap({ir_index})")?,
             Hir::Destructure(ir_index) => writeln!(f, "destructure({ir_index})")?,
 
-            Hir::AnyOpaque(metadata) => match metadata {
-                Some(metadata) => writeln!(f, "type(any_opaque::[{metadata}])")?,
-                None => writeln!(f, "type(any_opaque)")?,
-            },
+            Hir::AnyOpaque => writeln!(f, "type(any_opaque)")?,
             Hir::Bool { width } => match width {
                 1 => writeln!(f, "type(bool)")?,
                 _ => writeln!(f, "type(b{width})")?,
@@ -1122,7 +1137,12 @@ fn lower_ast_root(
     } else {
         let mut nodes = vec![];
         nodes.push(builder.push_node(Hir::AstInfo(ast_idx)));
-        nodes.extend(lower_ast_namespace(builder, node_idx, true)?);
+        nodes.extend(lower_ast_namespace(
+            builder,
+            node_idx,
+            true,
+            NameStrategy::Parent,
+        )?);
         nodes.push(builder.push_node(Hir::BreakInline(*nodes.last().unwrap())));
         let nodes = builder.push_packed_list(&nodes);
         builder.patch_node(block, Hir::InlineBlock(nodes));
@@ -1134,7 +1154,12 @@ fn lower_ast_namespace(
     builder: &mut Builder<'_>,
     node_idx: NodeIndex,
     is_root: bool,
+    name_strategy: NameStrategy,
 ) -> Result<Vec<HirIdx>, CompilationError> {
+    if is_root {
+        assert_eq!(name_strategy, NameStrategy::Parent);
+    }
+
     let mut ir_idxs = vec![];
     ir_idxs.extend(builder.set_dbg_loc(node_idx));
 
@@ -1161,7 +1186,8 @@ fn lower_ast_namespace(
         ir_members.extend(lower_ast_stmt(builder, member)?);
     }
     let ir_members = builder.push_packed_list(&ir_members);
-    builder.patch_node(ir_idx, Hir::Namespace(ir_members));
+    let ir_members = builder.push_packed(ir_members);
+    builder.patch_node(ir_idx, Hir::Namespace(name_strategy, ir_members));
 
     Ok(ir_idxs)
 }
@@ -1303,7 +1329,7 @@ fn lower_ast_decl_stmt(
 
     for init_expr in init_list {
         let init_expr = builder.ast.get_packed(init_expr);
-        lazy_members.extend(lower_ast_expr(builder, init_expr, ExprKind::RValue)?);
+        lazy_members.extend(lower_ast_expr(builder, init_expr, ExprKind::RValueInit)?);
         let init_expr = *lazy_members.last().unwrap();
         lazy_members.push(builder.push_node(Hir::InitDecl(init_expr)));
     }
@@ -1332,7 +1358,7 @@ fn lower_ast_decl_stmt(
             return Err(CompilationError);
         }
 
-        let decl = builder.push_packed(SingleDecl {
+        let decl = builder.push_packed(DeclInfo {
             decl_type,
             prototype: DeclProto {
                 is_pub,
@@ -1371,6 +1397,8 @@ enum ExprKind {
     Statement,
     LValue,
     RValue,
+    RValueInit,
+    RValueRet,
 }
 
 fn lower_ast_expr(
@@ -1380,8 +1408,6 @@ fn lower_ast_expr(
 ) -> Result<Vec<HirIdx>, CompilationError> {
     let node = builder.ast.get_node(node_idx);
     match node.data {
-        NodeData::TemplateExprSimple(_, _) => todo!(),
-        NodeData::TemplateExpr(_, _) => todo!(),
         NodeData::Range(_, _) => todo!(),
         NodeData::Binary(_, _) => lower_ast_expr_binary(builder, node_idx, kind),
         NodeData::Unary(_) => lower_ast_expr_unary(builder, node_idx, kind),
@@ -1423,20 +1449,7 @@ fn lower_ast_expr(
         NodeData::Container(_, _) | NodeData::ContainerConst(_, _) => todo!(),
         NodeData::Namespace(_) => todo!(),
         NodeData::Primitive(_, _) => todo!(),
-        NodeData::TemplateTypeExprOne(_, _)
-        | NodeData::TemplateTypeExprOneComma(_, _)
-        | NodeData::TemplateTypeExprOneDots(_, _)
-        | NodeData::TemplateTypeExprOneDotsComma(_, _)
-        | NodeData::TemplateTypeExpr(_, _)
-        | NodeData::TemplateTypeExprComma(_, _)
-        | NodeData::TemplateTypeExprDots(_, _)
-        | NodeData::TemplateTypeExprDotsComma(_, _) => todo!(),
         NodeData::Index(_, _) => todo!(),
-        NodeData::Alias(_) => todo!(),
-        NodeData::Bind1(_, _)
-        | NodeData::Bind1Comma(_, _)
-        | NodeData::Bind(_, _)
-        | NodeData::BindComma(_, _) => todo!(),
         NodeData::TypeBinarySuffix(_, _) => todo!(),
         NodeData::TypeUnarySuffix(_) => todo!(),
         NodeData::Call1(_, _)
@@ -1845,7 +1858,7 @@ fn lower_ast_expr_ident(
             }
         }
         _ => match kind {
-            ExprKind::Statement | ExprKind::RValue => {
+            ExprKind::Statement | ExprKind::RValue | ExprKind::RValueInit | ExprKind::RValueRet => {
                 nodes.push(builder.push_node(Hir::LoadIdent(node.main_token)))
             }
             ExprKind::LValue => nodes.push(builder.push_node(Hir::LoadIdentPtr(node.main_token))),

@@ -13,15 +13,14 @@ use crate::{
     ast::{DeclType, NodeIndex},
     compilation_unit::{Cu, ReportKind},
     hir::{
-        CompilationError, DeclProto, Hir, HirChunk, HirChunkView, HirIdx, HirRangeIterator,
-        SingleDecl, SrcLocation,
+        CompilationError, DeclInfo, DeclProto, Hir, HirChunkView, HirIdx, HirRangeIterator,
+        NameStrategy, SrcLocation,
     },
     intern_pool::{
         Capture, Decl, DeclId, DeclInner, HirInfo, Index, InternPool, Key, KeyBigIntStorage,
         KeyInt, KeyIntStorage, KeyTag, KeyTypeNamespace, LDScopeId, LazyDeclScope, LocalPool,
         RawCString, Scope, TypeNamespace, TypedIndex, UnorderedDeclScope, UnorderedDeclScopeInner,
     },
-    util::NonMaxU32,
 };
 
 pub struct Sema {
@@ -413,7 +412,7 @@ async fn sema_block<'a>(
             Hir::AstInfo(_) => {}
             Hir::DbgLocation(src_loc) => inner.set_src_loc(src_loc),
 
-            Hir::Namespace(_) => sema_namespace(cu, sema, inner, chunk, hir_idx).await?,
+            Hir::Namespace(_, _) => sema_namespace(cu, sema, inner, chunk, hir_idx).await?,
             Hir::Declarations(_) => todo!(),
 
             Hir::PushDeclType(_) => todo!(),
@@ -518,7 +517,7 @@ async fn sema_block<'a>(
             Hir::NegWrap(hir_idx) => todo!(),
             Hir::Destructure(hir_idx) => todo!(),
 
-            Hir::AnyOpaque(hir_idx) => todo!(),
+            Hir::AnyOpaque => todo!(),
             Hir::Bool { width } => todo!(),
             Hir::Int {
                 width,
@@ -611,7 +610,7 @@ async fn sema_container<'a>(
                 let mut nodes = chunk.block_range_iter(hir_idx).iter(chunk);
                 _ = nodes.next().unwrap();
                 for decl_idx in nodes {
-                    let SingleDecl {
+                    let DeclInfo {
                         decl_type,
                         prototype:
                             DeclProto {
@@ -721,6 +720,11 @@ async fn sema_namespace<'a>(
     chunk: HirChunkView<'a>,
     decl_idx: HirIdx,
 ) -> Result<(), CompilationError> {
+    let name_strategy = match chunk.get_node(decl_idx) {
+        Hir::Namespace(name_strategy, _) => name_strategy,
+        _ => unreachable!(),
+    };
+
     let ip = cu.pool().get_or_init_local_pool().await;
     let scope = UnorderedDeclScope {
         hir_info: inner.hir_info(),
@@ -739,11 +743,18 @@ async fn sema_namespace<'a>(
     };
     let scope_id = ip.intern_udscope(scope).await;
 
-    let qualified_name = format!(
-        "{}.__namespace_{}\0",
-        unsafe { inner.qualified_name().as_str() },
-        decl_idx.get()
-    );
+    let parent_name = unsafe { inner.qualified_name().as_str() };
+    let qualified_name = match name_strategy {
+        NameStrategy::Parent => parent_name.to_string(),
+        NameStrategy::Decl => {
+            let block = &inner.blocks[inner.block_idx];
+            let decl_name = block.tmp_decls[block.tmp_decl_idx as usize].name;
+            let decl_name = unsafe { decl_name.as_str() };
+            format!("{parent_name}.{decl_name}\0")
+        }
+        NameStrategy::Anon => format!("{parent_name}.__namespace_{}\0", decl_idx.get()),
+    };
+    println!("{qualified_name}");
     let qualified_name = ip.intern_cstring(&qualified_name).await;
 
     let ns_id = ip

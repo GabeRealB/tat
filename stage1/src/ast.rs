@@ -379,9 +379,6 @@ macro_rules! Token {
     (while) => {
         $crate::lexer::Tag::KwWhile
     };
-    (with) => {
-        $crate::lexer::Tag::KwWith
-    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -617,9 +614,6 @@ impl Ast {
                     idx = expr;
                     continue;
                 }
-                NodeData::TemplateExprSimple(_, _) => node.main_token,
-                NodeData::TemplateExpr(_, _) => node.main_token,
-                NodeData::TemplateExprComma(_, _) => node.main_token,
                 NodeData::Range(lhs, _) => {
                     if let Some(lhs) = lhs {
                         idx = lhs;
@@ -701,35 +695,7 @@ impl Ast {
                 NodeData::ContainerConst(_, _) => node.main_token,
                 NodeData::Namespace(_) => node.main_token,
                 NodeData::Primitive(_, _) => node.main_token,
-                NodeData::TemplateTypeExprOne(_, _) => node.main_token,
-                NodeData::TemplateTypeExprOneComma(_, _) => node.main_token,
-                NodeData::TemplateTypeExprOneDots(_, _) => node.main_token,
-                NodeData::TemplateTypeExprOneDotsComma(_, _) => node.main_token,
-                NodeData::TemplateTypeExpr(_, _) => node.main_token,
-                NodeData::TemplateTypeExprComma(_, _) => node.main_token,
-                NodeData::TemplateTypeExprDots(_, _) => node.main_token,
-                NodeData::TemplateTypeExprDotsComma(_, _) => node.main_token,
                 NodeData::Index(ty_expr, _) => {
-                    idx = ty_expr;
-                    continue;
-                }
-                NodeData::Alias(ty_expr) => {
-                    idx = ty_expr;
-                    continue;
-                }
-                NodeData::Bind1(ty_expr, _) => {
-                    idx = ty_expr;
-                    continue;
-                }
-                NodeData::Bind1Comma(ty_expr, _) => {
-                    idx = ty_expr;
-                    continue;
-                }
-                NodeData::Bind(ty_expr, _) => {
-                    idx = ty_expr;
-                    continue;
-                }
-                NodeData::BindComma(ty_expr, _) => {
                     idx = ty_expr;
                     continue;
                 }
@@ -842,18 +808,6 @@ impl Ast {
                     last_token.next()
                 }
                 NodeData::ExprSemicolon(_) => node.main_token,
-                NodeData::TemplateExprSimple(_, expr) => {
-                    idx = expr;
-                    continue;
-                }
-                NodeData::TemplateExpr(_, expr) => {
-                    idx = expr;
-                    continue;
-                }
-                NodeData::TemplateExprComma(_, expr) => {
-                    idx = expr;
-                    continue;
-                }
                 NodeData::Range(_, rhs) => {
                     if let Some(rhs) = rhs {
                         idx = rhs;
@@ -999,20 +953,7 @@ impl Ast {
                     continue;
                 }
                 NodeData::Primitive(token_index, node_index) => todo!(),
-                NodeData::TemplateTypeExprOne(node_index, node_index1) => todo!(),
-                NodeData::TemplateTypeExprOneComma(node_index, node_index1) => todo!(),
-                NodeData::TemplateTypeExprOneDots(node_index, node_index1) => todo!(),
-                NodeData::TemplateTypeExprOneDotsComma(node_index, node_index1) => todo!(),
-                NodeData::TemplateTypeExpr(extra_index, node_index) => todo!(),
-                NodeData::TemplateTypeExprComma(extra_index, node_index) => todo!(),
-                NodeData::TemplateTypeExprDots(extra_index, node_index) => todo!(),
-                NodeData::TemplateTypeExprDotsComma(extra_index, node_index) => todo!(),
                 NodeData::Index(_, _) => node.main_token,
-                NodeData::Alias(_) => node.main_token,
-                NodeData::Bind1(_, _) => node.main_token,
-                NodeData::Bind1Comma(_, _) => node.main_token,
-                NodeData::Bind(_, _) => node.main_token,
-                NodeData::BindComma(_, _) => node.main_token,
                 NodeData::Call1(_, _) => node.main_token,
                 NodeData::Call1Comma(_, _) => node.main_token,
                 NodeData::Call(_, _) => node.main_token,
@@ -1188,64 +1129,6 @@ impl Display for Ast {
                     writeln!(f, ");")?;
                 }
                 NodeData::ExprSemicolon(expr) => writeln!(f, "{idx} := expr({expr});")?,
-                NodeData::TemplateExprSimple(where_expr, expr) => {
-                    if let Some(where_expr) = where_expr {
-                        writeln!(
-                            f,
-                            "{idx} := with(args := [], where := {where_expr}, expr := {expr}"
-                        )?;
-                    } else {
-                        writeln!(f, "{idx} := with(args := [], expr := {expr}")?;
-                    }
-                }
-                NodeData::TemplateExpr(proto, expr) => {
-                    let TemplateExprProto { args, where_expr } = self.get_packed(*proto);
-                    write!(f, "{idx} := with(args := [")?;
-                    for (i, arg) in args.enumerate() {
-                        let TemplateExprArg {
-                            ident,
-                            type_expr,
-                            init_expr,
-                        } = self.get_packed(arg);
-                        let ident = self.get_ident(ident);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{ident}: {type_expr}")?;
-                        if let Some(init_expr) = init_expr {
-                            write!(f, " = {init_expr}")?;
-                        }
-                    }
-                    if let Some(where_expr) = where_expr {
-                        writeln!(f, "], where := {where_expr}, expr := {expr}")?;
-                    } else {
-                        writeln!(f, "], expr := {expr}")?;
-                    }
-                }
-                NodeData::TemplateExprComma(proto, expr) => {
-                    let TemplateExprProto { args, where_expr } = self.get_packed(*proto);
-                    write!(f, "{idx} := with(args := [")?;
-                    for (i, arg) in args.enumerate() {
-                        let TemplateExprArg {
-                            ident,
-                            type_expr,
-                            init_expr,
-                        } = self.get_packed(arg);
-                        let ident = self.get_ident(ident);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{ident}: {type_expr}")?;
-                        if let Some(init_expr) = init_expr {
-                            write!(f, " = {init_expr}")?;
-                        }
-                    }
-                    if let Some(where_expr) = where_expr {
-                        writeln!(f, ",], where := {where_expr}, expr := {expr}")?;
-                    } else {
-                        writeln!(f, ",], expr := {expr}")?;
-                    }
-                }
                 NodeData::Range(lhs, rhs) => {
                     let op_token = self.get_token(main_token);
                     let op = op_token.tag.as_lexeme().unwrap();
@@ -2008,165 +1891,14 @@ impl Display for Ast {
                     let id = self.get_string_lit(*id);
                     writeln!(f, "{idx} := #primitive({id}, block := {block})")?
                 }
-                NodeData::TemplateTypeExprOne(arg_type_expr, type_expr) => {
-                    if let Some(arg_type_expr) = arg_type_expr {
-                        writeln!(
-                            f,
-                            "{idx} := with_type(args := [{arg_type_expr}], type := {type_expr}])"
-                        )?
-                    } else {
-                        writeln!(f, "{idx} := with_type(args := [], type := {type_expr})")?
-                    }
-                }
-                NodeData::TemplateTypeExprOneComma(arg_type_expr, type_expr) => writeln!(
-                    f,
-                    "{idx} := with_type(args := [{arg_type_expr},], type := {type_expr}])"
-                )?,
-                NodeData::TemplateTypeExprOneDots(arg_type_expr, type_expr) => {
-                    if let Some(arg_type_expr) = arg_type_expr {
-                        writeln!(
-                            f,
-                            "{idx} := with_type(args := [{arg_type_expr}, ...], type := {type_expr}])"
-                        )?
-                    } else {
-                        writeln!(f, "{idx} := with_type(args := [...], type := {type_expr})")?
-                    }
-                }
-                NodeData::TemplateTypeExprOneDotsComma(arg_type_expr, type_expr) => {
-                    if let Some(arg_type_expr) = arg_type_expr {
-                        writeln!(
-                            f,
-                            "{idx} := with_type(args := [{arg_type_expr}, ...,], type := {type_expr}])"
-                        )?
-                    } else {
-                        writeln!(f, "{idx} := with_type(args := [...,], type := {type_expr})")?
-                    }
-                }
-                NodeData::TemplateTypeExpr(args, type_expr) => {
-                    write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_packed(*args);
-                    for (i, arg) in args.enumerate() {
-                        let TemplateTypeExprArg {
-                            type_expr,
-                            has_init,
-                        } = self.get_packed(arg);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        if has_init {
-                            write!(f, "{type_expr} = ...")?;
-                        } else {
-                            write!(f, "{type_expr}")?;
-                        }
-                    }
-                    writeln!(f, "], type := {type_expr})")?
-                }
-                NodeData::TemplateTypeExprComma(args, type_expr) => {
-                    write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_packed(*args);
-                    for (i, arg) in args.enumerate() {
-                        let TemplateTypeExprArg {
-                            type_expr,
-                            has_init,
-                        } = self.get_packed(arg);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        if has_init {
-                            write!(f, "{type_expr} = ...")?;
-                        } else {
-                            write!(f, "{type_expr}")?;
-                        }
-                    }
-                    writeln!(f, ",], type := {type_expr})")?
-                }
-                NodeData::TemplateTypeExprDots(args, type_expr) => {
-                    write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_packed(*args);
-                    for (i, arg) in args.enumerate() {
-                        let TemplateTypeExprArg {
-                            type_expr,
-                            has_init,
-                        } = self.get_packed(arg);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        if has_init {
-                            write!(f, "{type_expr} = ...")?;
-                        } else {
-                            write!(f, "{type_expr}")?;
-                        }
-                    }
-                    writeln!(f, ", ...], type := {type_expr})")?
-                }
-                NodeData::TemplateTypeExprDotsComma(args, type_expr) => {
-                    write!(f, "{idx} := with_type(args := [")?;
-                    let args = self.get_packed(*args);
-                    for (i, arg) in args.enumerate() {
-                        let TemplateTypeExprArg {
-                            type_expr,
-                            has_init,
-                        } = self.get_packed(arg);
-                        if i != 0 {
-                            write!(f, ", ")?;
-                        }
-                        if has_init {
-                            write!(f, "{type_expr} = ...")?;
-                        } else {
-                            write!(f, "{type_expr}")?;
-                        }
-                    }
-                    writeln!(f, ", ...,], type := {type_expr})")?
-                }
                 NodeData::Index(expr, index_expr) => {
                     writeln!(f, "{idx} := index(expr := {expr}, index := {index_expr})")?
                 }
-                NodeData::Alias(type_expr) => writeln!(f, "{idx} := alias(expr := {type_expr})")?,
-                NodeData::Bind1(type_expr, bind_expr) => {
-                    if let Some(bind_expr) = bind_expr {
-                        writeln!(
-                            f,
-                            "{idx} := bind(expr := {type_expr}, args := [{bind_expr}])"
-                        )?
-                    } else {
-                        writeln!(f, "{idx} := bind(expr := {type_expr}, args := [])")?
-                    }
-                }
-                NodeData::Bind1Comma(type_expr, bind_expr) => writeln!(
-                    f,
-                    "{idx} := bind(expr := {type_expr}, args := [{bind_expr},])"
-                )?,
-                NodeData::Bind(type_expr, exprs) => {
-                    write!(f, "{idx} := bind(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_packed(*exprs);
-                    for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_packed(expr);
-                        if i == 0 {
-                            write!(f, "{expr}")?;
-                        } else {
-                            write!(f, ", {expr}")?;
-                        }
-                    }
-                    writeln!(f, "])")?;
-                }
-                NodeData::BindComma(type_expr, exprs) => {
-                    write!(f, "{idx} := bind(expr := {type_expr}, args := [")?;
-                    let exprs = self.get_packed(*exprs);
-                    for (i, expr) in exprs.enumerate() {
-                        let expr = self.get_packed(expr);
-                        if i == 0 {
-                            write!(f, "{expr}")?;
-                        } else {
-                            write!(f, ", {expr}")?;
-                        }
-                    }
-                    writeln!(f, ",])")?;
-                }
                 NodeData::Call1(type_expr, arg_expr) => {
-                    if let Some(bind_expr) = arg_expr {
+                    if let Some(arg_expr) = arg_expr {
                         writeln!(
                             f,
-                            "{idx} := call(expr := {type_expr}, args := [{bind_expr}])"
+                            "{idx} := call(expr := {type_expr}, args := [{arg_expr}])"
                         )?
                     } else {
                         writeln!(f, "{idx} := call(expr := {type_expr}, args := [])")?
@@ -2246,7 +1978,6 @@ pub enum ErrorData {
     ExpectedBlockStatement,
     ExpectedVarInlineOrIdent,
     ExpectedInitExpression,
-    ExpectedTemplateExpr,
     ExpectedExpr,
     ExpectedPrimaryExpr,
     ExpectedTypeExpr,
@@ -2276,7 +2007,6 @@ impl ErrorData {
                 "expected a `var`, `inline` or identifier token".into()
             }
             Self::ExpectedInitExpression => "expected an init expression".into(),
-            Self::ExpectedTemplateExpr => "expected a template expression".into(),
             Self::ExpectedExpr => "expected an expression".into(),
             Self::ExpectedPrimaryExpr => "expected a primary expression".into(),
             Self::ExpectedTypeExpr => "expected a type expression".into(),
@@ -2610,24 +2340,6 @@ pub enum NodeData {
     ///
     /// `main_token` is the `;` token.
     ExprSemicolon(NodeIndex),
-    /// `with[] where(expr) expr`
-    /// 1. Optional where expression.
-    /// 2. Template expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateExprSimple(Option<NodeIndex>, NodeIndex),
-    /// `with[x: t = expr] where(expr) expr`
-    /// 1. Template prototype.
-    /// 2. Template expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateExpr(ExtraIndex<TemplateExprProto>, NodeIndex),
-    /// `with[x: t = expr,] where(expr) expr`
-    /// 1. Template prototype.
-    /// 2. Template expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateExprComma(ExtraIndex<TemplateExprProto>, NodeIndex),
     /// `expr range_op expr`
     /// 1. First optional sub-expression.
     /// 2. Second optional sub-expression.
@@ -2937,89 +2649,12 @@ pub enum NodeData {
     ///
     /// `main_token` is the `#primitive` token.
     Primitive(TokenIndex, NodeIndex),
-    /// `with[type_expr] -> expr`
-    /// 1. Optional type expression.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprOne(Option<NodeIndex>, NodeIndex),
-    /// `with[type_expr,] -> expr`
-    /// 1. Type expression.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprOneComma(NodeIndex, NodeIndex),
-    /// `with[type_expr, ...] -> expr`
-    /// 1. Optional type expression.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprOneDots(Option<NodeIndex>, NodeIndex),
-    /// `with[type_expr, ...,] -> expr`
-    /// 1. Optional type expression.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprOneDotsComma(Option<NodeIndex>, NodeIndex),
-    /// `with[type_expr = ..., ..., type_expr = ...] -> expr`
-    /// 1. List of args.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExpr(ExtraIndex<ExtraIndexRange<TemplateTypeExprArg>>, NodeIndex),
-    /// `with[type_expr = ..., ..., type_expr = ...] -> expr`
-    /// 1. List of args.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprComma(ExtraIndex<ExtraIndexRange<TemplateTypeExprArg>>, NodeIndex),
-    /// `with[type_expr = ..., ..., type_expr = ..., ...] -> expr`
-    /// 1. List of args.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprDots(ExtraIndex<ExtraIndexRange<TemplateTypeExprArg>>, NodeIndex),
-    /// `with[type_expr = ..., ..., type_expr = ..., ...] -> expr`
-    /// 1. List of args.
-    /// 2. Template type expression.
-    ///
-    /// `main_token` is the `with` token.
-    TemplateTypeExprDotsComma(ExtraIndex<ExtraIndexRange<TemplateTypeExprArg>>, NodeIndex),
     /// `type_expr[expr]`
     /// 1. Type expression
     /// 2. Index expression
     ///
     /// `main_token` is the `]` token.
     Index(NodeIndex, NodeIndex),
-    /// `type_expr::[...]`
-    /// 1. Type expression.
-    ///
-    /// `main_token` is the `]` token.
-    Alias(NodeIndex),
-    /// `type_expr::[expr]`
-    /// 1. Type expression.
-    /// 2. Optional expression.
-    ///
-    /// `main_token` is the `]` token.
-    Bind1(NodeIndex, Option<NodeIndex>),
-    /// `type_expr::[expr,]`
-    /// 1. Type expression
-    /// 2. Expression
-    ///
-    /// `main_token` is the `]` token.
-    Bind1Comma(NodeIndex, NodeIndex),
-    /// `type_expr::[expr, ..., expr]`
-    /// 1. Type expression
-    /// 2. Expression list
-    ///
-    /// `main_token` is the `]` token.
-    Bind(NodeIndex, ExtraIndex<ExtraIndexRange<NodeIndex>>),
-    /// `type_expr::[expr, ..., expr,]`
-    /// 1. Type expression
-    /// 2. Expression list
-    ///
-    /// `main_token` is the `]` token.
-    BindComma(NodeIndex, ExtraIndex<ExtraIndexRange<NodeIndex>>),
     /// `type_expr(expr)`
     /// 1. Type expression
     /// 2. Optional expression
@@ -3154,53 +2789,6 @@ impl Packable for DeclList {
             decl_type,
             prototypes,
             type_expr,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TemplateExprArg {
-    pub ident: TokenIndex,
-    pub type_expr: NodeIndex,
-    pub init_expr: Option<NodeIndex>,
-}
-
-impl Packable for TemplateExprArg {
-    const LEN: usize = <(TokenIndex, NodeIndex, Option<NodeIndex>)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.ident);
-        buffer.write(self.type_expr);
-        buffer.write(self.init_expr);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            ident: buffer.read(),
-            type_expr: buffer.read(),
-            init_expr: buffer.read(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TemplateExprProto {
-    args: ExtraIndexRange<TemplateExprArg>,
-    where_expr: Option<NodeIndex>,
-}
-
-impl Packable for TemplateExprProto {
-    const LEN: usize = <(ExtraIndexRange<TemplateExprArg>, Option<NodeIndex>)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.args);
-        buffer.write(self.where_expr);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            args: buffer.read(),
-            where_expr: buffer.read(),
         }
     }
 }
@@ -3799,28 +3387,6 @@ impl Packable for Matrix {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TemplateTypeExprArg {
-    type_expr: NodeIndex,
-    has_init: bool,
-}
-
-impl Packable for TemplateTypeExprArg {
-    const LEN: usize = <(NodeIndex, bool)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.type_expr);
-        buffer.write(self.has_init);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            type_expr: buffer.read(),
-            has_init: buffer.read(),
-        }
-    }
-}
-
 struct Parser<'a> {
     _source: &'a [u8],
     tokens: &'a [Token],
@@ -4239,8 +3805,7 @@ fn expect_statement(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         Token!(static) => expect_statement_global_decl_static(p),
         Token!(pub) | Token!(var) | Token!(inline) => expect_statement_const_or_global_decl(p),
         Token!(#<identifier>) => expect_statement_decl_or_expr(p),
-        Token!(with)
-        | Token!(!)
+        Token!(!)
         | Token!(-)
         | Token!(~)
         | Token!(-%)
@@ -4449,7 +4014,7 @@ fn parse_ambiguous_statement_const_or_global_decl(
         }
     }
 
-    // If we see `:{` or `::[`, we know that we must be parsing an expression and not a declaration.
+    // If we see `:{` we know that we must be parsing an expression and not a declaration.
     match p.tag() {
         Token!(:) if !p.peek2(Token!('{')) => {
             p.next();
@@ -4493,7 +4058,7 @@ fn parse_ambiguous_statement_const_or_global_decl(
                 NodeData::Decl(decl_list, init_exprs),
             )))
         }
-        Token!(::) if !p.peek2(Token!('[')) => {
+        Token!(::) => {
             p.next();
             let mut init_exprs = vec![expect_expr(p)?];
             while p.eat_token(Token!(,)) {
@@ -4807,84 +4372,9 @@ fn expect_assign_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     }
 }
 
-/// Expr <- TemplateExpr
+/// Expr <- RangeExpr
 fn expect_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    parse_template_expr(p)
-}
-
-/// TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? RangeExpr
-fn parse_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let snapshot = p.snapshot();
-    if let Some(with_token) = p.take_token(Token!(with)) {
-        p.expect_token(Token!('['))?;
-        match p.tag() {
-            // Template expressions
-            // with[] where expr expr
-            Token!(']') if !p.peek2(Token!(->)) => {
-                p.next();
-                let where_expr = if p.eat_token(Token!(where)) {
-                    p.expect_token(Token!('('))?;
-                    let expr = expect_expr(p)?;
-                    p.expect_token(Token!(')'))?;
-                    Some(expr)
-                } else {
-                    None
-                };
-                let expr = expect_expr(p)?;
-                Ok(p.push_node(with_token, NodeData::TemplateExprSimple(where_expr, expr)))
-            }
-            // with[a: t = v] where expr expr
-            Token!(#<identifier>) if p.peek2(Token!(:)) && !p.peek3(Token!('{')) => {
-                let mut args = vec![];
-                let mut trailing_comma = false;
-                while !p.eat_token(Token!(']')) {
-                    let ident = p.expect_token(Token!(#<identifier>))?;
-                    p.expect_token(Token!(:))?;
-                    let type_expr = expect_type_expr(p)?;
-                    let init_expr = if p.eat_token(Token!(=)) {
-                        Some(expect_expr(p)?)
-                    } else {
-                        None
-                    };
-                    args.push(TemplateExprArg {
-                        ident,
-                        type_expr,
-                        init_expr,
-                    });
-
-                    trailing_comma = p.eat_token(Token!(,));
-                    if !trailing_comma {
-                        p.expect_token(Token!(']'))?;
-                        break;
-                    }
-                }
-                let where_expr = if p.eat_token(Token!(where)) {
-                    p.expect_token(Token!('('))?;
-                    let expr = expect_expr(p)?;
-                    p.expect_token(Token!(')'))?;
-                    Some(expr)
-                } else {
-                    None
-                };
-                let expr = parse_range_expr(p)?;
-
-                let args = p.push_packed_list(&args).unwrap();
-                let proto = p.push_packed(TemplateExprProto { args, where_expr });
-                if trailing_comma {
-                    Ok(p.push_node(with_token, NodeData::TemplateExprComma(proto, expr)))
-                } else {
-                    Ok(p.push_node(with_token, NodeData::TemplateExpr(proto, expr)))
-                }
-            }
-            // Template type expressions
-            _ => {
-                p.rollback(snapshot);
-                expect_template_type_expr(p)
-            }
-        }
-    } else {
-        parse_range_expr(p)
-    }
+    parse_range_expr(p)
 }
 
 /// RangeExpr <- BoolOrExpr (DOT2 BoolOrExpr? / DOT2EQUAL BoolOrExpr) / (DOT2 / DOT2EQUAL) BoolOrExpr
@@ -4943,8 +4433,7 @@ fn parse_range_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 | Token!(opaque)
                 | Token!(struct)
                 | Token!(union)
-                | Token!(#primitive)
-                | Token!(with) => {
+                | Token!(#primitive) => {
                     let right = parse_bool_or_expr(p)?;
                     Ok(p.push_node(range_token, NodeData::Range(Some(expr), Some(right))))
                 }
@@ -5134,8 +4623,7 @@ fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(opaque)
         | Token!(struct)
         | Token!(union)
-        | Token!(#primitive)
-        | Token!(with) => expect_curly_suffix_expr(p),
+        | Token!(#primitive) => expect_curly_suffix_expr(p),
         _ => {
             p.fail(ErrorData::ExpectedPrefixExpr)?;
             unreachable!()
@@ -5304,8 +4792,7 @@ fn expect_break_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(opaque)
         | Token!(struct)
         | Token!(union)
-        | Token!(#primitive)
-        | Token!(with) => Some(expect_expr(p)?),
+        | Token!(#primitive) => Some(expect_expr(p)?),
         _ => None,
     };
 
@@ -5370,8 +4857,7 @@ fn expect_continue_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(opaque)
         | Token!(struct)
         | Token!(union)
-        | Token!(#primitive)
-        | Token!(with) => Some(expect_expr(p)?),
+        | Token!(#primitive) => Some(expect_expr(p)?),
         _ => None,
     };
 
@@ -5423,8 +4909,7 @@ fn expect_return_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(opaque)
         | Token!(struct)
         | Token!(union)
-        | Token!(#primitive)
-        | Token!(with) => Some(expect_expr(p)?),
+        | Token!(#primitive) => Some(expect_expr(p)?),
         _ => None,
     };
 
@@ -5476,8 +4961,7 @@ fn expect_throw_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(opaque)
         | Token!(struct)
         | Token!(union)
-        | Token!(#primitive)
-        | Token!(with) => Some(expect_expr(p)?),
+        | Token!(#primitive) => Some(expect_expr(p)?),
         _ => None,
     };
 
@@ -6060,7 +5544,6 @@ fn expect_pack_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 ///     / PrimitiveTypeExpr
 ///     / StructTypeExpr
 ///     / UnionTypeExpr
-///     / TemplateTypeExpr
 fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let expr = match p.tag() {
         Token!(?) => {
@@ -6241,7 +5724,6 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         Token!(struct) => expect_struct_type_expr(p)?,
         Token!(union) => todo!("union"),
         Token!(#primitive) => expect_primitive_type_expr(p)?,
-        Token!(with) => expect_template_type_expr(p)?,
         _ => {
             p.fail(ErrorData::ExpectedTypeExpr)?;
             unreachable!()
@@ -6253,7 +5735,6 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 /// SingleTypeExpr <- PrefixTypeOp* PrimaryTypeExpr (SuffixOp / MacroCallArguments / FnCallArguments)*
 /// SuffixOp
 ///    <- LBRACKET Expr RBRACKET
-///     / DOT2 LBRACKET (ExprList / DOT3) RBRACKET
 ///     / DOT IDENTIFIER
 ///     / MINUSARROW IDENTIFIER
 ///     / DOTAMPERSAND
@@ -6277,44 +5758,6 @@ fn parse_single_type_expr_suffixes(
                 let end_tok = p.expect_token(Token!(']'))?;
                 p.push_node(end_tok, NodeData::Index(expr, index_expr))
             }
-            Token!(::) => {
-                p.next();
-                p.expect_token(Token!('['))?;
-                if p.peek(Token!(...)) && p.peek2(Token!(']')) {
-                    _ = p.next();
-                    let end = p.next();
-                    p.push_node(end, NodeData::Alias(expr))
-                } else {
-                    let mut bind_exprs = vec![];
-                    let mut has_trailing_comma = false;
-                    while !p.peek(Token!(']')) {
-                        bind_exprs.push(expect_expr(p)?);
-                        has_trailing_comma = p.eat_token(Token!(,));
-                        if !has_trailing_comma {
-                            break;
-                        }
-                    }
-                    let end = p.expect_token(Token!(']'))?;
-
-                    if bind_exprs.len() <= 1 {
-                        assert!(bind_exprs.len() == 1 || !has_trailing_comma);
-                        let bind_expr = bind_exprs.first().copied();
-                        if has_trailing_comma {
-                            p.push_node(end, NodeData::Bind1Comma(expr, bind_expr.unwrap()))
-                        } else {
-                            p.push_node(end, NodeData::Bind1(expr, bind_expr))
-                        }
-                    } else {
-                        let bind_exprs = p.push_packed_list(&bind_exprs).unwrap();
-                        let bind_exprs = p.push_packed(bind_exprs);
-                        if has_trailing_comma {
-                            p.push_node(end, NodeData::BindComma(expr, bind_exprs))
-                        } else {
-                            p.push_node(end, NodeData::Bind(expr, bind_exprs))
-                        }
-                    }
-                }
-            }
             Token!(.) | Token!(->) => {
                 let op = p.next();
                 let ident = p.expect_token(Token!(#<identifier>))?;
@@ -6329,10 +5772,10 @@ fn parse_single_type_expr_suffixes(
             Token!(!) if p.peek2(Token!('{')) => todo!("macro!{{}}"),
             Token!('(') => {
                 p.next();
-                let mut args_exprs = vec![];
+                let mut arg_exprs = vec![];
                 let mut has_trailing_comma = false;
                 while !p.peek(Token!(')')) {
-                    args_exprs.push(expect_expr(p)?);
+                    arg_exprs.push(expect_expr(p)?);
                     has_trailing_comma = p.eat_token(Token!(,));
                     if !has_trailing_comma {
                         break;
@@ -6340,21 +5783,21 @@ fn parse_single_type_expr_suffixes(
                 }
                 let end = p.expect_token(Token!(')'))?;
 
-                if args_exprs.len() <= 1 {
-                    assert!(args_exprs.len() == 1 || !has_trailing_comma);
-                    let bind_expr = args_exprs.first().copied();
+                if arg_exprs.len() <= 1 {
+                    assert!(arg_exprs.len() == 1 || !has_trailing_comma);
+                    let arg_expr = arg_exprs.first().copied();
                     if has_trailing_comma {
-                        p.push_node(end, NodeData::Call1Comma(expr, bind_expr))
+                        p.push_node(end, NodeData::Call1Comma(expr, arg_expr))
                     } else {
-                        p.push_node(end, NodeData::Call1(expr, bind_expr))
+                        p.push_node(end, NodeData::Call1(expr, arg_expr))
                     }
                 } else {
-                    let bind_exprs = p.push_packed_list(&args_exprs).unwrap();
-                    let bind_exprs = p.push_packed(bind_exprs);
+                    let arg_exprs = p.push_packed_list(&arg_exprs).unwrap();
+                    let arg_exprs = p.push_packed(arg_exprs);
                     if has_trailing_comma {
-                        p.push_node(end, NodeData::CallComma(expr, bind_exprs))
+                        p.push_node(end, NodeData::CallComma(expr, arg_exprs))
                     } else {
-                        p.push_node(end, NodeData::Call(expr, bind_exprs))
+                        p.push_node(end, NodeData::Call(expr, arg_exprs))
                     }
                 }
             }
@@ -6721,154 +6164,6 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 } else {
                     Ok(p.push_node(lbrace_token, NodeData::ExprInitList(exprs)))
                 }
-            }
-        }
-    }
-}
-
-fn expect_template_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let with_token = p.expect_token(Token!(with))?;
-    p.expect_token(Token!('['))?;
-    match p.tag() {
-        // with[] -> type_expr
-        Token!(']') => {
-            p.next();
-            p.next();
-            let expr = expect_type_expr(p)?;
-            Ok(p.push_node(with_token, NodeData::TemplateTypeExprOne(None, expr)))
-        }
-        // with[...] -> type_expr
-        Token!(...) if p.peek2(Token!(']')) => {
-            p.next();
-            p.next();
-            p.expect_token(Token!(->))?;
-            let expr = expect_type_expr(p)?;
-            Ok(p.push_node(with_token, NodeData::TemplateTypeExprOneDots(None, expr)))
-        }
-        // with[...,] -> type_expr
-        Token!(...) if p.peek2(Token!(,)) => {
-            p.next();
-            p.next();
-            p.expect_token(Token!(']'))?;
-            p.expect_token(Token!(->))?;
-            let expr = expect_type_expr(p)?;
-            Ok(p.push_node(
-                with_token,
-                NodeData::TemplateTypeExprOneDotsComma(None, expr),
-            ))
-        }
-        // with[x = ...] -> type_expr
-        _ => {
-            let type_expr = expect_type_expr(p)?;
-            let has_init = if p.eat_token(Token!(=)) {
-                p.expect_token(Token!(...))?;
-                true
-            } else {
-                false
-            };
-            let comma = p.eat_token(Token!(,));
-            if !comma && !has_init {
-                p.expect_token(Token!(']'))?;
-                p.expect_token(Token!(->))?;
-                let expr = expect_type_expr(p)?;
-                return Ok(p.push_node(
-                    with_token,
-                    NodeData::TemplateTypeExprOne(Some(type_expr), expr),
-                ));
-            }
-
-            if !has_init {
-                match p.tag() {
-                    Token!(']') => {
-                        p.next();
-                        p.expect_token(Token!(->))?;
-                        let expr = expect_type_expr(p)?;
-                        return Ok(p.push_node(
-                            with_token,
-                            NodeData::TemplateTypeExprOneComma(type_expr, expr),
-                        ));
-                    }
-                    Token!(...) if p.peek2(Token!(']')) => {
-                        p.next();
-                        p.next();
-                        p.expect_token(Token!(->))?;
-                        let expr = expect_type_expr(p)?;
-                        return Ok(p.push_node(
-                            with_token,
-                            NodeData::TemplateTypeExprOneDots(Some(type_expr), expr),
-                        ));
-                    }
-                    Token!(...) if p.peek2(Token!(,)) => {
-                        p.next();
-                        p.next();
-                        p.expect_token(Token!(']'))?;
-                        p.expect_token(Token!(->))?;
-                        let expr = expect_type_expr(p)?;
-                        return Ok(p.push_node(
-                            with_token,
-                            NodeData::TemplateTypeExprOneDotsComma(Some(type_expr), expr),
-                        ));
-                    }
-                    _ => {}
-                }
-            }
-
-            let mut comma = true;
-            let mut args = vec![TemplateTypeExprArg {
-                type_expr,
-                has_init,
-            }];
-            while !p.eat_token(Token!(']')) {
-                match p.tag() {
-                    Token!(...) if p.peek2(Token!(']')) => {
-                        p.next();
-                        p.next();
-                        p.expect_token(Token!(->))?;
-                        let expr = expect_type_expr(p)?;
-                        let args = p.push_packed_list(&args).unwrap();
-                        let args = p.push_packed(args);
-                        return Ok(
-                            p.push_node(with_token, NodeData::TemplateTypeExprDots(args, expr))
-                        );
-                    }
-                    Token!(...) if p.peek2(Token!(,)) => {
-                        p.next();
-                        p.next();
-                        p.expect_token(Token!(']'))?;
-                        p.expect_token(Token!(->))?;
-                        let expr = expect_type_expr(p)?;
-                        let args = p.push_packed_list(&args).unwrap();
-                        let args = p.push_packed(args);
-                        return Ok(p.push_node(
-                            with_token,
-                            NodeData::TemplateTypeExprDotsComma(args, expr),
-                        ));
-                    }
-                    _ => {}
-                }
-
-                let type_expr = expect_type_expr(p)?;
-                let has_init = if p.eat_token(Token!(=)) {
-                    p.expect_token(Token!(...))?;
-                    true
-                } else {
-                    false
-                };
-                comma = p.eat_token(Token!(,));
-                args.push(TemplateTypeExprArg {
-                    type_expr,
-                    has_init,
-                });
-            }
-
-            p.expect_token(Token!(->))?;
-            let expr = expect_type_expr(p)?;
-            let args = p.push_packed_list(&args).unwrap();
-            let args = p.push_packed(args);
-            if comma {
-                Ok(p.push_node(with_token, NodeData::TemplateTypeExprComma(args, expr)))
-            } else {
-                Ok(p.push_node(with_token, NodeData::TemplateTypeExpr(args, expr)))
             }
         }
     }
