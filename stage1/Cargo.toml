@@ -4,5 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+smol = "2.0.2"
+anstream = "1.0.0"
+petgraph = "0.8.3"
+bitflags = "2.10.0"
+rapidhash = "4.4.1"
 num-bigint = "0.4.6"
 annotate-snippets = "0.12.10"
+
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

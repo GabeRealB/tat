@@ -1,392 +1,394 @@
 use std::{
+    borrow::Cow,
     fmt::{Debug, Display},
     marker::PhantomData,
     num::NonZero,
     str,
-    sync::Arc,
 };
 
 use crate::packed_stream::{self, BitPacked, PackedStreamReader, PackedStreamWriter};
 use crate::{lexer, packed_stream::Packable};
 
+#[macro_export]
 macro_rules! Token {
     (#<eof>) => {
-        lexer::Tag::EndOfFile
+        $crate::lexer::Tag::EndOfFile
     };
     (#<identifier>) => {
-        lexer::Tag::Ident
+        $crate::lexer::Tag::Ident
     };
     (#<core_identifier>) => {
-        lexer::Tag::IdentCore
+        $crate::lexer::Tag::IdentCore
     };
     (#<builtin_identifier>) => {
-        lexer::Tag::IdentBuiltin
+        $crate::lexer::Tag::IdentBuiltin
     };
     (#<char_literal>) => {
-        lexer::Tag::LitChar
+        $crate::lexer::Tag::LitChar
     };
     (#<string_literal>) => {
-        lexer::Tag::LitString
+        $crate::lexer::Tag::LitString
     };
     (#<raw_string_literal>) => {
-        lexer::Tag::LitRawString
+        $crate::lexer::Tag::LitRawString
     };
     (#<int_literal>) => {
-        lexer::Tag::LitInt
+        $crate::lexer::Tag::LitInt
     };
     (#<float_literal>) => {
-        lexer::Tag::LitFloat
+        $crate::lexer::Tag::LitFloat
     };
     (#<inner_doc_comment>) => {
-        lexer::Tag::InnerDocComment
+        $crate::lexer::Tag::InnerDocComment
     };
     (#<outer_doc_comment>) => {
-        lexer::Tag::OuterDocComment
+        $crate::lexer::Tag::OuterDocComment
     };
 
     (&) => {
-        lexer::Tag::SymAmpersand
+        $crate::lexer::Tag::SymAmpersand
     };
     (&=) => {
-        lexer::Tag::SymAmpersandEqual
+        $crate::lexer::Tag::SymAmpersandEqual
     };
     (*) => {
-        lexer::Tag::SymAsterisk
+        $crate::lexer::Tag::SymAsterisk
     };
     (*=) => {
-        lexer::Tag::SymAsteriskEqual
+        $crate::lexer::Tag::SymAsteriskEqual
     };
     (*%) => {
-        lexer::Tag::SymAsteriskPercent
+        $crate::lexer::Tag::SymAsteriskPercent
     };
     (*%=) => {
-        lexer::Tag::SymAsteriskPercentEqual
+        $crate::lexer::Tag::SymAsteriskPercentEqual
     };
     (*|) => {
-        lexer::Tag::SymAsteriskPipe
+        $crate::lexer::Tag::SymAsteriskPipe
     };
     (*|=) => {
-        lexer::Tag::SymAsteriskPipeEqual
+        $crate::lexer::Tag::SymAsteriskPipeEqual
     };
     (^) => {
-        lexer::Tag::SymCaret
+        $crate::lexer::Tag::SymCaret
     };
     (^=) => {
-        lexer::Tag::SymCaretEqual
+        $crate::lexer::Tag::SymCaretEqual
     };
     (:) => {
-        lexer::Tag::SymColon
+        $crate::lexer::Tag::SymColon
     };
     (::) => {
-        lexer::Tag::SymColon2
+        $crate::lexer::Tag::SymColon2
     };
     (,) => {
-        lexer::Tag::SymComma
+        $crate::lexer::Tag::SymComma
     };
     (.) => {
-        lexer::Tag::SymDot
+        $crate::lexer::Tag::SymDot
     };
     (..) => {
-        lexer::Tag::SymDot2
+        $crate::lexer::Tag::SymDot2
     };
     (..=) => {
-        lexer::Tag::SymDot2Equal
+        $crate::lexer::Tag::SymDot2Equal
     };
     (...) => {
-        lexer::Tag::SymDot3
+        $crate::lexer::Tag::SymDot3
     };
     (.&) => {
-        lexer::Tag::SymDotAmpersand
+        $crate::lexer::Tag::SymDotAmpersand
     };
     (.*) => {
-        lexer::Tag::SymDotAsterisk
+        $crate::lexer::Tag::SymDotAsterisk
     };
     (.!) => {
-        lexer::Tag::SymDotExclamationmark
+        $crate::lexer::Tag::SymDotExclamationmark
     };
     (.?) => {
-        lexer::Tag::SymDotQuestionmark
+        $crate::lexer::Tag::SymDotQuestionmark
     };
     (=) => {
-        lexer::Tag::SymEqual
+        $crate::lexer::Tag::SymEqual
     };
     (==) => {
-        lexer::Tag::SymEqualEqual
+        $crate::lexer::Tag::SymEqualEqual
     };
     (=>) => {
-        lexer::Tag::SymEqualArrow
+        $crate::lexer::Tag::SymEqualArrow
     };
     (!) => {
-        lexer::Tag::SymExclamationmark
+        $crate::lexer::Tag::SymExclamationmark
     };
     (!=) => {
-        lexer::Tag::SymExclamationmarkEqual
+        $crate::lexer::Tag::SymExclamationmarkEqual
     };
     (<) => {
-        lexer::Tag::SymLArrow
+        $crate::lexer::Tag::SymLArrow
     };
     (<<) => {
-        lexer::Tag::SymLArrow2
+        $crate::lexer::Tag::SymLArrow2
     };
     (<<=) => {
-        lexer::Tag::SymLArrow2Equal
+        $crate::lexer::Tag::SymLArrow2Equal
     };
     (<<|) => {
-        lexer::Tag::SymLArrow2Pipe
+        $crate::lexer::Tag::SymLArrow2Pipe
     };
     (<<|=) => {
-        lexer::Tag::SymLArrow2PipeEqual
+        $crate::lexer::Tag::SymLArrow2PipeEqual
     };
     (<=) => {
-        lexer::Tag::SymLArrowEqual
+        $crate::lexer::Tag::SymLArrowEqual
     };
     (<=>) => {
-        lexer::Tag::SymLArrowEqualRArrow
+        $crate::lexer::Tag::SymLArrowEqualRArrow
     };
     ('{') => {
-        lexer::Tag::SymLBrace
+        $crate::lexer::Tag::SymLBrace
     };
     ('[') => {
-        lexer::Tag::SymLBracket
+        $crate::lexer::Tag::SymLBracket
     };
     ('(') => {
-        lexer::Tag::SymLParen
+        $crate::lexer::Tag::SymLParen
     };
     (-) => {
-        lexer::Tag::SymMinus
+        $crate::lexer::Tag::SymMinus
     };
     (-=) => {
-        lexer::Tag::SymMinusEqual
+        $crate::lexer::Tag::SymMinusEqual
     };
     (-%) => {
-        lexer::Tag::SymMinusPercent
+        $crate::lexer::Tag::SymMinusPercent
     };
     (-%=) => {
-        lexer::Tag::SymMinusPercentEqual
+        $crate::lexer::Tag::SymMinusPercentEqual
     };
     (-|) => {
-        lexer::Tag::SymMinusPipe
+        $crate::lexer::Tag::SymMinusPipe
     };
     (-|=) => {
-        lexer::Tag::SymMinusPipeEqual
+        $crate::lexer::Tag::SymMinusPipeEqual
     };
     (->) => {
-        lexer::Tag::SymMinusArrow
+        $crate::lexer::Tag::SymMinusArrow
     };
     (%) => {
-        lexer::Tag::SymPercent
+        $crate::lexer::Tag::SymPercent
     };
     (%=) => {
-        lexer::Tag::SymPercentEqual
+        $crate::lexer::Tag::SymPercentEqual
     };
     (|) => {
-        lexer::Tag::SymPipe
+        $crate::lexer::Tag::SymPipe
     };
     (|=) => {
-        lexer::Tag::SymPipeEqual
+        $crate::lexer::Tag::SymPipeEqual
     };
     (+) => {
-        lexer::Tag::SymPlus
+        $crate::lexer::Tag::SymPlus
     };
     (++) => {
-        lexer::Tag::SymPlus2
+        $crate::lexer::Tag::SymPlus2
     };
     (+=) => {
-        lexer::Tag::SymPlusEqual
+        $crate::lexer::Tag::SymPlusEqual
     };
     (+%) => {
-        lexer::Tag::SymPlusPercent
+        $crate::lexer::Tag::SymPlusPercent
     };
     (+%=) => {
-        lexer::Tag::SymPlusPercentEqual
+        $crate::lexer::Tag::SymPlusPercentEqual
     };
     (+|) => {
-        lexer::Tag::SymPlusPipe
+        $crate::lexer::Tag::SymPlusPipe
     };
     (+|=) => {
-        lexer::Tag::SymPlusPipeEqual
+        $crate::lexer::Tag::SymPlusPipeEqual
     };
     (#) => {
-        lexer::Tag::SymPound
+        $crate::lexer::Tag::SymPound
     };
     (#!) => {
-        lexer::Tag::SymPoundExclamationmark
+        $crate::lexer::Tag::SymPoundExclamationmark
     };
     (?) => {
-        lexer::Tag::SymQuestionmark
+        $crate::lexer::Tag::SymQuestionmark
     };
     (>) => {
-        lexer::Tag::SymRArrow
+        $crate::lexer::Tag::SymRArrow
     };
     (>>) => {
-        lexer::Tag::SymRArrow2
+        $crate::lexer::Tag::SymRArrow2
     };
     (>>=) => {
-        lexer::Tag::SymRArrow2Equal
+        $crate::lexer::Tag::SymRArrow2Equal
     };
     (>=) => {
-        lexer::Tag::SymRArrowEqual
+        $crate::lexer::Tag::SymRArrowEqual
     };
     ('}') => {
-        lexer::Tag::SymRBrace
+        $crate::lexer::Tag::SymRBrace
     };
     (']') => {
-        lexer::Tag::SymRBracket
+        $crate::lexer::Tag::SymRBracket
     };
     (')') => {
-        lexer::Tag::SymRParen
+        $crate::lexer::Tag::SymRParen
     };
     (;) => {
-        lexer::Tag::SymSemicolon
+        $crate::lexer::Tag::SymSemicolon
     };
     (/) => {
-        lexer::Tag::SymSlash
+        $crate::lexer::Tag::SymSlash
     };
     (/=) => {
-        lexer::Tag::SymSlashEqual
+        $crate::lexer::Tag::SymSlashEqual
     };
     (~) => {
-        lexer::Tag::SymTilde
+        $crate::lexer::Tag::SymTilde
     };
 
     (align) => {
-        lexer::Tag::KwAlign
+        $crate::lexer::Tag::KwAlign
     };
     (and) => {
-        lexer::Tag::KwAnd
+        $crate::lexer::Tag::KwAnd
     };
     (asm) => {
-        lexer::Tag::KwAsm
+        $crate::lexer::Tag::KwAsm
     };
     (break) => {
-        lexer::Tag::KwBreak
+        $crate::lexer::Tag::KwBreak
     };
     (callconv) => {
-        lexer::Tag::KwCallconv
+        $crate::lexer::Tag::KwCallconv
     };
     (catch) => {
-        lexer::Tag::KwCatch
+        $crate::lexer::Tag::KwCatch
     };
     (const) => {
-        lexer::Tag::KwConst
+        $crate::lexer::Tag::KwConst
     };
     (context) => {
-        lexer::Tag::KwContext
+        $crate::lexer::Tag::KwContext
     };
     (cont_defer) => {
-        lexer::Tag::KwContDefer
+        $crate::lexer::Tag::KwContDefer
     };
     (continue) => {
-        lexer::Tag::KwContinue
+        $crate::lexer::Tag::KwContinue
     };
     (defer) => {
-        lexer::Tag::KwDefer
+        $crate::lexer::Tag::KwDefer
     };
     (else) => {
-        lexer::Tag::KwElse
+        $crate::lexer::Tag::KwElse
     };
     (enum) => {
-        lexer::Tag::KwEnum
+        $crate::lexer::Tag::KwEnum
     };
     (err_defer) => {
-        lexer::Tag::KwErrDefer
+        $crate::lexer::Tag::KwErrDefer
     };
     (fn) => {
-        lexer::Tag::KwFn
+        $crate::lexer::Tag::KwFn
     };
     (fnptr) => {
-        lexer::Tag::KwFnptr
+        $crate::lexer::Tag::KwFnptr
     };
     (for) => {
-        lexer::Tag::KwFor
+        $crate::lexer::Tag::KwFor
     };
     (if) => {
-        lexer::Tag::KwIf
-    };
-    (impl) => {
-        lexer::Tag::KwImpl
+        $crate::lexer::Tag::KwIf
     };
     (inline) => {
-        lexer::Tag::KwInline
+        $crate::lexer::Tag::KwInline
     };
     (namespace) => {
-        lexer::Tag::KwNamespace
+        $crate::lexer::Tag::KwNamespace
     };
     (no_alias) => {
-        lexer::Tag::KwNoAlias
+        $crate::lexer::Tag::KwNoAlias
     };
     (no_inline) => {
-        lexer::Tag::KwNoInline
+        $crate::lexer::Tag::KwNoInline
     };
     (opaque) => {
-        lexer::Tag::KwOpaque
+        $crate::lexer::Tag::KwOpaque
     };
     (or) => {
-        lexer::Tag::KwOr
+        $crate::lexer::Tag::KwOr
     };
     (or_else) => {
-        lexer::Tag::KwOrElse
+        $crate::lexer::Tag::KwOrElse
     };
     (#primitive) => {
-        lexer::Tag::KwPrimitive
+        $crate::lexer::Tag::KwPrimitive
     };
     (pub) => {
-        lexer::Tag::KwPub
+        $crate::lexer::Tag::KwPub
+    };
+    (#run) => {
+        $crate::lexer::Tag::KwRun
     };
     (return) => {
-        lexer::Tag::KwReturn
+        $crate::lexer::Tag::KwReturn
     };
     (Self) => {
-        lexer::Tag::KwSelf
+        $crate::lexer::Tag::KwSelf
     };
     (self) => {
-        lexer::Tag::KwSelfIdent
+        $crate::lexer::Tag::KwSelfIdent
+    };
+    (static) => {
+        $crate::lexer::Tag::KwStatic
     };
     (struct) => {
-        lexer::Tag::KwStruct
+        $crate::lexer::Tag::KwStruct
     };
     (switch) => {
-        lexer::Tag::KwSwitch
+        $crate::lexer::Tag::KwSwitch
     };
     (thread_local) => {
-        lexer::Tag::KwThreadLocal
+        $crate::lexer::Tag::KwThreadLocal
     };
     (throw) => {
-        lexer::Tag::KwThrow
+        $crate::lexer::Tag::KwThrow
     };
     (try) => {
-        lexer::Tag::KwTry
+        $crate::lexer::Tag::KwTry
     };
     (union) => {
-        lexer::Tag::KwUnion
+        $crate::lexer::Tag::KwUnion
     };
     (unreachable) => {
-        lexer::Tag::KwUnreachable
+        $crate::lexer::Tag::KwUnreachable
     };
     (var) => {
-        lexer::Tag::KwVar
+        $crate::lexer::Tag::KwVar
     };
     (volatile) => {
-        lexer::Tag::KwVolatile
+        $crate::lexer::Tag::KwVolatile
     };
     (where) => {
-        lexer::Tag::KwWhere
+        $crate::lexer::Tag::KwWhere
     };
     (while) => {
-        lexer::Tag::KwWhile
+        $crate::lexer::Tag::KwWhile
     };
     (with) => {
-        lexer::Tag::KwWith
+        $crate::lexer::Tag::KwWith
     };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ByteOffset(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Token {
     pub tag: lexer::Tag,
-    pub start: ByteOffset,
+    pub start: u32,
+    pub length: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -400,6 +402,16 @@ impl TokenIndex {
 
     pub const fn get(self) -> u32 {
         self.0.get() - 1
+    }
+
+    pub const fn prev(self) -> Self {
+        assert!(self.get() != 0);
+        Self(unsafe { NonZero::new_unchecked(self.0.get() - 1) })
+    }
+
+    pub const fn next(self) -> Self {
+        assert!(self.get() < u32::MAX);
+        Self(unsafe { NonZero::new_unchecked(self.0.get() + 1) })
     }
 }
 
@@ -419,7 +431,7 @@ impl Display for TokenIndex {
 
 #[derive(Debug, Clone)]
 pub struct Ast {
-    pub source: Arc<[u8]>,
+    pub source: Box<[u8]>,
     pub tokens: Box<[Token]>,
     pub nodes: Box<[Node]>,
     pub extra_data: Box<[u32]>,
@@ -427,12 +439,13 @@ pub struct Ast {
 }
 
 impl Ast {
-    pub fn parse(source: Arc<[u8]>) -> Self {
-        let tokenizer = lexer::Tokenizer::new(source.clone());
+    pub fn parse(source: Box<[u8]>) -> Self {
+        let tokenizer = lexer::Tokenizer::new(&source);
         let tokens = tokenizer
             .map(|t| Token {
                 tag: t.tag,
-                start: ByteOffset(t.span.byte_range().start as u32),
+                start: t.span.start as u32,
+                length: (t.span.end - t.span.start) as u32,
             })
             .collect::<Box<_>>();
 
@@ -463,6 +476,15 @@ impl Ast {
         }
     }
 
+    pub fn get_source(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(&self.source) }
+    }
+
+    pub fn get_node(&self, idx: NodeIndex) -> &Node {
+        let idx = idx.get();
+        &self.nodes[idx]
+    }
+
     pub fn get_token(&self, idx: TokenIndex) -> Token {
         let idx = idx.get() as usize;
         self.tokens[idx]
@@ -472,285 +494,539 @@ impl Ast {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<identifier>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        if bytes[0] == b'#' {
-            // Skip the first two `#"` bytes
-            let mut offset = 2;
-            loop {
-                offset += bytes[offset..]
-                    .iter()
-                    .position(|byte| *byte == b'"')
-                    .expect("checked by the lexer")
-                    + 1;
-                if bytes[offset - 2] != b'\\' {
-                    break;
-                }
-            }
-            unsafe { str::from_utf8_unchecked(&bytes[..offset]) }
-        } else {
-            let end = bytes
-                .iter()
-                .position(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
-                .expect("source has zero terminator");
-            unsafe { str::from_utf8_unchecked(&bytes[..end]) }
-        }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_core_ident(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<core_identifier>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        let end = bytes[1..]
-            .iter()
-            .position(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
-            .expect("source has zero terminator")
-            + 1;
-        unsafe { str::from_utf8_unchecked(&bytes[..end]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_builtin_ident(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<builtin_identifier>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        let end = bytes[1..]
-            .iter()
-            .position(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
-            .expect("source has zero terminator")
-            + 1;
-        unsafe { str::from_utf8_unchecked(&bytes[..end]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_char_lit(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<char_literal>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        // Skip the first `'` byte
-        let mut offset = 1;
-        loop {
-            offset += bytes[offset..]
-                .iter()
-                .position(|byte| *byte == b'\'')
-                .expect("checked by the lexer")
-                + 1;
-            if bytes[offset - 2] != b'\\' {
-                break;
-            }
-        }
-        unsafe { str::from_utf8_unchecked(&bytes[..offset]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_float_lit(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<float_literal>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        let end = if bytes.len() > 2 && bytes[0] == b'0' && bytes[1] == b'x' {
-            let prefix_end = bytes[2..]
-                .iter()
-                .position(|&b| !b.is_ascii_hexdigit() && b != b'_')
-                .expect("checked by the lexer")
-                + 2;
-            let exponent_start = if bytes[prefix_end] == b'.' {
-                bytes[prefix_end..]
-                    .iter()
-                    .position(|&b| !b.is_ascii_hexdigit() && b != b'_')
-                    .expect("checked by the lexer")
-                    + prefix_end
-            } else {
-                prefix_end
-            };
-
-            if !matches!(bytes[exponent_start], b'p' | b'P') {
-                exponent_start
-            } else {
-                let exp_number_start = if matches!(bytes[exponent_start + 1], b'-' | b'+') {
-                    exponent_start + 2
-                } else {
-                    exponent_start + 1
-                };
-                bytes[exp_number_start..]
-                    .iter()
-                    .position(|&b| !b.is_ascii_digit() && b != b'_')
-                    .expect("checked by the lexer")
-                    + exp_number_start
-            }
-        } else {
-            let prefix_end = bytes
-                .iter()
-                .position(|&b| !b.is_ascii_digit() && b != b'_')
-                .expect("checked by the lexer");
-            let exponent_start = if bytes[prefix_end] == b'.' {
-                bytes[prefix_end..]
-                    .iter()
-                    .position(|&b| !b.is_ascii_digit() && b != b'_')
-                    .expect("checked by the lexer")
-                    + prefix_end
-            } else {
-                prefix_end
-            };
-
-            if !matches!(bytes[exponent_start], b'e' | b'E') {
-                exponent_start
-            } else {
-                let exp_number_start = if matches!(bytes[exponent_start + 1], b'-' | b'+') {
-                    exponent_start + 2
-                } else {
-                    exponent_start + 1
-                };
-                bytes[exp_number_start..]
-                    .iter()
-                    .position(|&b| !b.is_ascii_digit() && b != b'_')
-                    .expect("checked by the lexer")
-                    + exp_number_start
-            }
-        };
-        unsafe { str::from_utf8_unchecked(&bytes[..end]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_int_lit(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<int_literal>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        let end = if bytes.len() > 2 && bytes[0] == b'0' {
-            match bytes[1] {
-                b'b' => {
-                    bytes[2..]
-                        .iter()
-                        .position(|&b| b != b'0' && b != b'1' && b != b'_')
-                        .expect("checked by the lexer")
-                        + 2
-                }
-                b'o' => {
-                    bytes[2..]
-                        .iter()
-                        .position(|&b| !matches!(b, b'0'..=b'7') && b != b'_')
-                        .expect("checked by the lexer")
-                        + 2
-                }
-                b'x' => {
-                    bytes[2..]
-                        .iter()
-                        .position(|&b| !b.is_ascii_hexdigit() && b != b'_')
-                        .expect("checked by the lexer")
-                        + 2
-                }
-                _ => 1,
-            }
-        } else {
-            bytes
-                .iter()
-                .position(|&b| !b.is_ascii_digit() && b != b'_')
-                .expect("checked by the lexer")
-        };
-        unsafe { str::from_utf8_unchecked(&bytes[..end]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_string_lit(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<string_literal>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        // Skip the first `"` byte
-        let mut offset = 1;
-        loop {
-            offset += bytes[offset..]
-                .iter()
-                .position(|byte| *byte == b'\"')
-                .expect("checked by the lexer")
-                + 1;
-            if bytes[offset - 2] != b'\\' {
-                break;
-            }
-        }
-        unsafe { str::from_utf8_unchecked(&bytes[..offset]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_raw_string_lit(&self, idx: TokenIndex) -> &str {
         let idx = idx.get() as usize;
         let token = self.tokens[idx];
         assert_eq!(token.tag, Token!(#<raw_string_literal>));
-        let start = token.start.0 as usize;
-
-        let bytes = if let Some(next) = self.tokens.get(idx + 1) {
-            let end = next.start.0 as usize;
-            &self.source[start..=end]
-        } else {
-            &self.source[start..]
-        };
-
-        // Skip the first two `\\` bytes
-        let end = bytes
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .expect("checked by the lexer")
-            + 1;
-        unsafe { str::from_utf8_unchecked(&bytes[..end]) }
+        let start = token.start as usize;
+        let end = start + token.length as usize;
+        let bytes = &self.source[start..end];
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
     pub fn get_packed<T: Packable>(&self, idx: ExtraIndex<T>) -> T {
         let start = idx.get();
         let mut stream = PackedStreamReader::new(&self.extra_data[start..]);
         stream.read()
+    }
+
+    pub fn get_node_leftmost_token(&self, mut idx: NodeIndex) -> TokenIndex {
+        loop {
+            let node = self.get_node(idx);
+            return match node.data {
+                NodeData::Root(_) => node.main_token,
+                NodeData::RootStructAttribute(_, _) => node.main_token,
+                NodeData::RootStructConstAttribute(_, _) => node.main_token,
+                NodeData::RootStructLayoutAttribute(_, _) => node.main_token,
+                NodeData::RootStructLayoutConstAttribute(_, _) => node.main_token,
+                NodeData::OuterAnnotation(_, _) => node.main_token,
+                NodeData::InnerAnnotation(_, _) => node.main_token,
+                NodeData::Const(_) => node.main_token,
+                NodeData::Run(_) => node.main_token,
+                NodeData::Defer(_) => node.main_token,
+                NodeData::Decl(decl_list, _) => {
+                    let decl_list = self.get_packed(decl_list);
+                    let first = self.get_packed(decl_list.prototypes.start());
+                    let mut token = first.ident;
+                    if first.is_pub {
+                        token = token.prev();
+                    }
+                    if first.is_var {
+                        token = token.prev();
+                    }
+                    if first.is_inline {
+                        token = token.prev();
+                    }
+                    if !matches!(decl_list.decl_type, DeclType::Normal | DeclType::Const) {
+                        token = token.prev();
+                    }
+
+                    token
+                }
+                NodeData::BlockTwo(_, _) => node.main_token,
+                NodeData::BlockTwoSemicolon(_, _) => node.main_token,
+                NodeData::Block(_) => node.main_token,
+                NodeData::BlockSemicolon(_) => node.main_token,
+                NodeData::ExprSemicolon(expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::TemplateExprSimple(_, _) => node.main_token,
+                NodeData::TemplateExpr(_, _) => node.main_token,
+                NodeData::TemplateExprComma(_, _) => node.main_token,
+                NodeData::Range(lhs, _) => {
+                    if let Some(lhs) = lhs {
+                        idx = lhs;
+                        continue;
+                    } else {
+                        node.main_token
+                    }
+                }
+                NodeData::Binary(lhs, _) => {
+                    idx = lhs;
+                    continue;
+                }
+                NodeData::Unary(_) => node.main_token,
+                NodeData::AsmSimple(_, _) => node.main_token,
+                NodeData::AsmVolatileSimple(_, _) => node.main_token,
+                NodeData::Asm(_, _) => node.main_token,
+                NodeData::AsmVolatile(_, _) => node.main_token,
+                NodeData::Jump(_, _) => node.main_token,
+                NodeData::Label(_) => node.main_token,
+                NodeData::TryBlock(_) => node.main_token,
+                NodeData::Fn(_, _) => node.main_token,
+                NodeData::Payload(is_ptr, _) => {
+                    if is_ptr {
+                        node.main_token.prev()
+                    } else {
+                        node.main_token
+                    }
+                }
+                NodeData::ForSimple(_, _) => node.main_token,
+                NodeData::ForSimpleInline(_, _) => node.main_token,
+                NodeData::For(_, _) => node.main_token,
+                NodeData::ForInline(_, _) => node.main_token,
+                NodeData::ExprInit(expr, _) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::TokenInit(_) => node.main_token,
+                NodeData::ExprInitListTwo(_, _) => node.main_token,
+                NodeData::ExprInitListTwoComma(_, _) => node.main_token,
+                NodeData::ExprInitList(_) => node.main_token,
+                NodeData::ExprInitListComma(_) => node.main_token,
+                NodeData::FieldInitListTwo(_, _) => node.main_token,
+                NodeData::FieldInitListTwoComma(_, _) => node.main_token,
+                NodeData::FieldInitList(_) => node.main_token,
+                NodeData::FieldInitListComma(_) => node.main_token,
+                NodeData::ErrorUnionType(lhs, _) => {
+                    idx = lhs;
+                    continue;
+                }
+                NodeData::Pack(ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::OptionType(_) => node.main_token,
+                NodeData::Slice(_, _) => node.main_token,
+                NodeData::SinglePointerSimple(_, _) => node.main_token,
+                NodeData::SinglePointer(_, _) => node.main_token,
+                NodeData::MultiPointerSimple(_, _) => node.main_token,
+                NodeData::MultiPointer(_, _) => node.main_token,
+                NodeData::Vector(_, _) => node.main_token,
+                NodeData::MatrixSimple(_, _) => node.main_token,
+                NodeData::Matrix(_, _) => node.main_token,
+                NodeData::ArraySimple(_, _) => node.main_token,
+                NodeData::Array(_, _) => node.main_token,
+                NodeData::EnumLiteral(_) => node.main_token,
+                NodeData::Ident => node.main_token,
+                NodeData::CoreIdent => node.main_token,
+                NodeData::BuiltinIdent => node.main_token,
+                NodeData::WhereExpr(_) => node.main_token,
+                NodeData::SelfType => node.main_token,
+                NodeData::SelfIdent => node.main_token,
+                NodeData::Unreachable => node.main_token,
+                NodeData::CharLiteral => node.main_token,
+                NodeData::FloatLiteral => node.main_token,
+                NodeData::IntLiteral => node.main_token,
+                NodeData::StringLiteral => node.main_token,
+                NodeData::RawStringLiteral(_, _) => node.main_token,
+                NodeData::Container(_, _) => node.main_token,
+                NodeData::ContainerConst(_, _) => node.main_token,
+                NodeData::Namespace(_) => node.main_token,
+                NodeData::Primitive(_, _) => node.main_token,
+                NodeData::TemplateTypeExprOne(_, _) => node.main_token,
+                NodeData::TemplateTypeExprOneComma(_, _) => node.main_token,
+                NodeData::TemplateTypeExprOneDots(_, _) => node.main_token,
+                NodeData::TemplateTypeExprOneDotsComma(_, _) => node.main_token,
+                NodeData::TemplateTypeExpr(_, _) => node.main_token,
+                NodeData::TemplateTypeExprComma(_, _) => node.main_token,
+                NodeData::TemplateTypeExprDots(_, _) => node.main_token,
+                NodeData::TemplateTypeExprDotsComma(_, _) => node.main_token,
+                NodeData::Index(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Alias(ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Bind1(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Bind1Comma(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Bind(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::BindComma(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Call1(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Call1Comma(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Call(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::CallComma(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::TypeBinarySuffix(ty_expr, _) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::TypeUnarySuffix(ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+            };
+        }
+    }
+
+    pub fn get_node_rightmost_token(&self, mut idx: NodeIndex) -> TokenIndex {
+        loop {
+            let node = self.get_node(idx);
+            return match node.data {
+                NodeData::Root(members) => match members {
+                    Some(members) => {
+                        idx = self.get_packed(members.end());
+                        continue;
+                    }
+                    None => node.main_token,
+                },
+                NodeData::RootStructAttribute(_, tok) => tok,
+                NodeData::RootStructConstAttribute(_, tok) => tok,
+                NodeData::RootStructLayoutAttribute(_, tok) => tok,
+                NodeData::RootStructLayoutConstAttribute(_, tok) => tok,
+                NodeData::OuterAnnotation(_, tok) => tok,
+                NodeData::InnerAnnotation(_, tok) => tok,
+                NodeData::Const(node_index) => {
+                    idx = node_index;
+                    continue;
+                }
+                NodeData::Run(node_index) => {
+                    idx = node_index;
+                    continue;
+                }
+                NodeData::Defer(node_index) => {
+                    idx = node_index;
+                    continue;
+                }
+                NodeData::Decl(_, _) => node.main_token,
+                NodeData::BlockTwo(stmt_1, stmt_2) => {
+                    let mut last_token = if let Some(idx) = stmt_2 {
+                        self.get_node_rightmost_token(idx).next()
+                    } else if let Some(idx) = stmt_1 {
+                        self.get_node_rightmost_token(idx).next()
+                    } else {
+                        node.main_token.next()
+                    };
+                    let mut token = self.get_token(last_token);
+                    while token.tag != Token!('}') {
+                        last_token = last_token.next();
+                        token = self.get_token(last_token);
+                    }
+                    last_token
+                }
+                NodeData::BlockTwoSemicolon(stmt_1, stmt_2) => {
+                    let mut last_token = if let Some(idx) = stmt_2 {
+                        self.get_node_rightmost_token(idx).next()
+                    } else if let Some(idx) = stmt_1 {
+                        self.get_node_rightmost_token(idx).next()
+                    } else {
+                        node.main_token.next()
+                    };
+                    let mut token = self.get_token(last_token);
+                    while token.tag != Token!('}') {
+                        last_token = last_token.next();
+                        token = self.get_token(last_token);
+                    }
+                    last_token.next()
+                }
+                NodeData::Block(stmts) => {
+                    let last_stmt = self.get_packed(stmts.end());
+                    let mut last_token = self.get_node_rightmost_token(last_stmt).next();
+                    let mut token = self.get_token(last_token);
+                    while token.tag != Token!('}') {
+                        last_token = last_token.next();
+                        token = self.get_token(last_token);
+                    }
+                    last_token
+                }
+                NodeData::BlockSemicolon(stmts) => {
+                    let last_stmt = self.get_packed(stmts.end());
+                    let mut last_token = self.get_node_rightmost_token(last_stmt).next();
+                    let mut token = self.get_token(last_token);
+                    while token.tag != Token!('}') {
+                        last_token = last_token.next();
+                        token = self.get_token(last_token);
+                    }
+                    last_token.next()
+                }
+                NodeData::ExprSemicolon(_) => node.main_token,
+                NodeData::TemplateExprSimple(_, expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::TemplateExpr(_, expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::TemplateExprComma(_, expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::Range(_, rhs) => {
+                    if let Some(rhs) = rhs {
+                        idx = rhs;
+                        continue;
+                    } else {
+                        node.main_token
+                    }
+                }
+                NodeData::Binary(_, rhs) => {
+                    idx = rhs;
+                    continue;
+                }
+                NodeData::Unary(expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::AsmSimple(node_index, node_index1) => todo!(),
+                NodeData::AsmVolatileSimple(node_index, node_index1) => todo!(),
+                NodeData::Asm(extra_index, node_index) => todo!(),
+                NodeData::AsmVolatile(extra_index, node_index) => todo!(),
+                NodeData::Jump(_, expr) => {
+                    if let Some(expr) = expr {
+                        idx = expr;
+                        continue;
+                    } else {
+                        node.main_token
+                    }
+                }
+                NodeData::Label(expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::TryBlock(block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::Fn(_, block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::Payload(_, trailing_comma) => {
+                    if trailing_comma {
+                        node.main_token.next()
+                    } else {
+                        node.main_token
+                    }
+                }
+                NodeData::ForSimple(extra_index, node_index) => todo!(),
+                NodeData::ForSimpleInline(extra_index, node_index) => todo!(),
+                NodeData::For(extra_index, node_index) => todo!(),
+                NodeData::ForInline(extra_index, node_index) => todo!(),
+                NodeData::ExprInit(_, block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::TokenInit(block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::ExprInitListTwo(node_index, node_index1) => todo!(),
+                NodeData::ExprInitListTwoComma(node_index, node_index1) => todo!(),
+                NodeData::ExprInitList(extra_index_range) => todo!(),
+                NodeData::ExprInitListComma(extra_index_range) => todo!(),
+                NodeData::FieldInitListTwo(extra_index, extra_index1) => todo!(),
+                NodeData::FieldInitListTwoComma(extra_index, extra_index1) => todo!(),
+                NodeData::FieldInitList(extra_index_range) => todo!(),
+                NodeData::FieldInitListComma(extra_index_range) => todo!(),
+                NodeData::ErrorUnionType(_, rhs) => {
+                    idx = rhs;
+                    continue;
+                }
+                NodeData::Pack(_) => node.main_token,
+                NodeData::OptionType(expr) => {
+                    idx = expr;
+                    continue;
+                }
+                NodeData::Slice(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::SinglePointerSimple(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::SinglePointer(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::MultiPointerSimple(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::MultiPointer(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Vector(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::MatrixSimple(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Matrix(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::ArraySimple(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::Array(_, ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::EnumLiteral(tok) => tok,
+                NodeData::Ident => node.main_token,
+                NodeData::CoreIdent => node.main_token,
+                NodeData::BuiltinIdent => node.main_token,
+                NodeData::WhereExpr(ty_expr) => {
+                    idx = ty_expr;
+                    continue;
+                }
+                NodeData::SelfType => node.main_token,
+                NodeData::SelfIdent => node.main_token,
+                NodeData::Unreachable => node.main_token,
+                NodeData::CharLiteral => node.main_token,
+                NodeData::FloatLiteral => node.main_token,
+                NodeData::IntLiteral => node.main_token,
+                NodeData::StringLiteral => node.main_token,
+                NodeData::RawStringLiteral(_, tok) => tok,
+                NodeData::Container(_, block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::ContainerConst(_, block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::Namespace(block) => {
+                    idx = block;
+                    continue;
+                }
+                NodeData::Primitive(token_index, node_index) => todo!(),
+                NodeData::TemplateTypeExprOne(node_index, node_index1) => todo!(),
+                NodeData::TemplateTypeExprOneComma(node_index, node_index1) => todo!(),
+                NodeData::TemplateTypeExprOneDots(node_index, node_index1) => todo!(),
+                NodeData::TemplateTypeExprOneDotsComma(node_index, node_index1) => todo!(),
+                NodeData::TemplateTypeExpr(extra_index, node_index) => todo!(),
+                NodeData::TemplateTypeExprComma(extra_index, node_index) => todo!(),
+                NodeData::TemplateTypeExprDots(extra_index, node_index) => todo!(),
+                NodeData::TemplateTypeExprDotsComma(extra_index, node_index) => todo!(),
+                NodeData::Index(_, _) => node.main_token,
+                NodeData::Alias(_) => node.main_token,
+                NodeData::Bind1(_, _) => node.main_token,
+                NodeData::Bind1Comma(_, _) => node.main_token,
+                NodeData::Bind(_, _) => node.main_token,
+                NodeData::BindComma(_, _) => node.main_token,
+                NodeData::Call1(_, _) => node.main_token,
+                NodeData::Call1Comma(_, _) => node.main_token,
+                NodeData::Call(_, _) => node.main_token,
+                NodeData::CallComma(_, _) => node.main_token,
+                NodeData::TypeBinarySuffix(_, ident) => ident,
+                NodeData::TypeUnarySuffix(_) => node.main_token,
+            };
+        }
+    }
+
+    pub fn get_node_token_span(&self, idx: NodeIndex) -> (TokenIndex, TokenIndex) {
+        let left = self.get_node_leftmost_token(idx);
+        let right = self.get_node_rightmost_token(idx);
+        (left, right)
     }
 }
 
@@ -787,500 +1063,85 @@ impl Display for Ast {
                 NodeData::OuterAnnotation(expr, _) => writeln!(f, "{idx} := #[={expr}]")?,
                 NodeData::InnerAnnotation(expr, _) => writeln!(f, "{idx} := #![={expr}]")?,
                 NodeData::Const(expr) => writeln!(f, "{idx} := const {expr}")?,
-                NodeData::ThreadLocalDeclAlign(align_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := thread_local(name := {ident}, align := {align_expr}, init := {init_expr});"
-                    )?
+                NodeData::Run(expr) => writeln!(f, "{idx} := #run {expr}")?,
+                NodeData::Defer(expr) => {
+                    let defer_op = self.get_token(main_token);
+                    let defer_op = defer_op.tag.as_lexeme().unwrap();
+                    writeln!(f, "{idx} := {defer_op} {expr}")?
                 }
-                NodeData::ThreadLocalDeclTypeInit(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    write!(f, "{idx} := thread_local(name := {ident}")?;
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    writeln!(f, ", init := {init_expr})")?
-                }
-                NodeData::ThreadLocalDecl(proto, type_init_expr) => {
-                    let DeclProtoPub {
-                        attrs,
-                        is_pub,
-                        is_var,
-                        ident,
-                        align_expr,
-                    } = self.get_packed(*proto);
-                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
-
-                    write!(f, "{idx} := thread_local(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, extra) in attrs.enumerate() {
-                            let idx = self.get_packed(extra);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
+                NodeData::Decl(decl_list, init_exprs) => {
+                    let DeclList {
+                        decl_type: decl_ty,
+                        prototypes,
+                        type_expr,
+                    } = self.get_packed(*decl_list);
+                    match decl_ty {
+                        DeclType::Normal => write!(f, "{idx} := decl(protos := [")?,
+                        DeclType::Const => write!(f, "{idx} := const_decl(protos := [")?,
+                        DeclType::ThreadLocal => {
+                            write!(f, "{idx} := thread_local_decl(protos := [")?
                         }
-                        write!(f, "]")?;
+                        DeclType::Static => write!(f, "{idx} := static_decl(protos := [")?,
                     }
-                    if is_pub {
-                        write!(f, ", pub")?;
-                    }
-                    if is_var {
-                        write!(f, ", var")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr})")?
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr})")?
-                    }
-                    writeln!(f, ", init := {init_expr})")?
-                }
-                NodeData::ThreadLocalDeclDestructure(protos, type_init_expr) => {
-                    let protos = self.get_packed(*protos);
-                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
 
-                    write!(f, "{idx} := thread_local_destructure(")?;
-                    for (i, proto) in protos.enumerate() {
-                        let DeclProtoPub {
-                            attrs,
+                    for (i, prototype) in prototypes.enumerate() {
+                        let DeclProto {
                             is_pub,
                             is_var,
+                            is_inline,
                             ident,
                             align_expr,
-                        } = self.get_packed(proto);
+                            annotations,
+                        } = self.get_packed(prototype);
                         let ident = self.get_ident(ident);
 
-                        if i == 0 {
-                            write!(f, "\n\t{i} := .{{ name := {ident}")?;
-                        } else {
-                            write!(f, ",\n\t{i} := .{{ name := {ident}")?;
+                        if i != 0 {
+                            write!(f, ",")?;
                         }
-                        if let Some(attrs) = attrs {
-                            write!(f, ", attrs := [")?;
-                            for (i, extra) in attrs.enumerate() {
-                                let idx = self.get_packed(extra);
-                                if i == 0 {
-                                    write!(f, "{idx}")?;
-                                } else {
-                                    write!(f, ", {idx}")?;
-                                }
-                            }
-                            write!(f, "]")?;
-                        }
+                        write!(f, "\n\t{{ name := {ident}")?;
                         if is_pub {
                             write!(f, ", pub")?;
                         }
                         if is_var {
                             write!(f, ", var")?;
                         }
+                        if is_inline {
+                            write!(f, ", inline")?;
+                        }
                         if let Some(align_expr) = align_expr {
                             write!(f, ", align := {align_expr}")?;
                         }
-                        write!(f, " }}")?;
-                    }
-                    write!(f, ",\n\t")?;
-                    if let Some(type_expr) = type_expr {
-                        write!(f, "type := {type_expr}), ")?
-                    }
-                    writeln!(f, "init := {init_expr})")?
-                }
-                NodeData::GlobalDeclAlign(align_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := global(name := {ident}, align := {align_expr}, init := {init_expr});"
-                    )?
-                }
-                NodeData::GlobalDeclTypeInit(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    write!(f, "{idx} := global(name := {ident}")?;
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    writeln!(f, ", init := {init_expr})")?
-                }
-                NodeData::GlobalDecl(proto, type_init_expr) => {
-                    let DeclProtoPub {
-                        attrs,
-                        is_pub,
-                        is_var,
-                        ident,
-                        align_expr,
-                    } = self.get_packed(*proto);
-                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
-
-                    write!(f, "{idx} := global(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, extra) in attrs.enumerate() {
-                            let idx = self.get_packed(extra);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
-                        }
-                        write!(f, "]")?;
-                    }
-                    if is_pub {
-                        write!(f, ", pub")?;
-                    }
-                    if is_var {
-                        write!(f, ", var")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr})")?
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr})")?
-                    }
-                    writeln!(f, ", init := {init_expr})")?
-                }
-                NodeData::GlobalDeclDestructure(protos, type_init_expr) => {
-                    let protos = self.get_packed(*protos);
-                    let PackedPair(type_expr, init_expr) = self.get_packed(*type_init_expr);
-
-                    write!(f, "{idx} := global_destructure(")?;
-                    for (i, proto) in protos.enumerate() {
-                        let DeclProtoPub {
-                            attrs,
-                            is_pub,
-                            is_var,
-                            ident,
-                            align_expr,
-                        } = self.get_packed(proto);
-                        let ident = self.get_ident(ident);
-
-                        if i == 0 {
-                            write!(f, "\n\t{i} := .{{ name := {ident}")?;
-                        } else {
-                            write!(f, ",\n\t{i} := .{{ name := {ident}")?;
-                        }
-                        if let Some(attrs) = attrs {
-                            write!(f, ", attrs := [")?;
-                            for (i, extra) in attrs.enumerate() {
-                                let idx = self.get_packed(extra);
-                                if i == 0 {
-                                    write!(f, "{idx}")?;
-                                } else {
-                                    write!(f, ", {idx}")?;
+                        if let Some(annotations) = annotations {
+                            write!(f, ", annotations := [")?;
+                            for (j, expr) in annotations.enumerate() {
+                                let expr = self.get_packed(expr);
+                                if j != 0 {
+                                    write!(f, ", ")?;
                                 }
+                                write!(f, "{expr}")?;
                             }
                             write!(f, "]")?;
-                        }
-                        if is_pub {
-                            write!(f, ", pub")?;
-                        }
-                        if is_var {
-                            write!(f, ", var")?;
-                        }
-                        if let Some(align_expr) = align_expr {
-                            write!(f, ", align := {align_expr}")?;
-                        }
-                        write!(f, " }}")?;
-                    }
-                    write!(f, ",\n\t")?;
-                    if let Some(type_expr) = type_expr {
-                        write!(f, "type := {type_expr}), ")?
-                    }
-                    writeln!(f, "init := {init_expr})")?
-                }
-                NodeData::ContainerFieldType(align, type_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, align := {align}, type := {type_expr})"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, type := {type_expr})"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldTypeComma(align, type_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, align := {align}, type := {type_expr}),"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, type := {type_expr}),"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInit(align, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, align := {align}, init := {init_expr})"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, init := {init_expr})"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInitComma(align, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, align := {align}, init := {init_expr}),"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field(name := {ident}, init := {init_expr}),"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldTypeInit(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := container_field(name := {ident}, type := {type_expr}, init := {init_expr})"
-                    )?
-                }
-                NodeData::ContainerFieldTypeInitComma(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := container_field(name := {ident}, type := {type_expr}, init := {init_expr}),"
-                    )?
-                }
-                NodeData::ContainerField(extra) => {
-                    let ident = self.get_ident(main_token);
-                    let StructFieldProto {
-                        attrs,
-                        align_expr,
-                        type_expr,
-                        init_expr,
-                    } = self.get_packed(*extra);
-
-                    write!(f, "{idx} := container_field(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, attr) in attrs.enumerate() {
-                            let idx = self.get_packed(attr);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
-                        }
-                        write!(f, "]")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr}")?;
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    if let Some(init_expr) = init_expr {
-                        write!(f, ", init := {init_expr}")?;
-                    }
-                    writeln!(f, ")")?
-                }
-                NodeData::ContainerFieldComma(extra) => {
-                    let ident = self.get_ident(main_token);
-                    let StructFieldProto {
-                        attrs,
-                        align_expr,
-                        type_expr,
-                        init_expr,
-                    } = self.get_packed(*extra);
-
-                    write!(f, "{idx} := container_field(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, attrs) in attrs.enumerate() {
-                            let idx = self.get_packed(attrs);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
-                        }
-                        write!(f, "]")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr}")?;
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    if let Some(init_expr) = init_expr {
-                        write!(f, ", init := {init_expr}")?;
-                    }
-                    writeln!(f, "),")?
-                }
-                NodeData::ContainerFieldInlineType(align, type_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, align := {align}, type := {type_expr})"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, type := {type_expr})"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInlineTypeComma(align, type_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, align := {align}, type := {type_expr}),"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, type := {type_expr}),"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInlineInit(align, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, align := {align}, init := {init_expr})"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, init := {init_expr})"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInlineInitComma(align, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    if let Some(align) = align {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, align := {align}, init := {init_expr}),"
-                        )?
-                    } else {
-                        writeln!(
-                            f,
-                            "{idx} := container_field_inlined(name := {ident}, init := {init_expr}),"
-                        )?
-                    }
-                }
-                NodeData::ContainerFieldInlineTypeInit(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := container_field_inlined(name := {ident}, type := {type_expr}, init := {init_expr})"
-                    )?
-                }
-                NodeData::ContainerFieldInlineTypeInitComma(type_expr, init_expr) => {
-                    let ident = self.get_ident(main_token);
-                    writeln!(
-                        f,
-                        "{idx} := container_field_inlined(name := {ident}, type := {type_expr}, init := {init_expr}),"
-                    )?
-                }
-                NodeData::ContainerFieldInline(extra) => {
-                    let ident = self.get_ident(main_token);
-                    let StructFieldProto {
-                        attrs,
-                        align_expr,
-                        type_expr,
-                        init_expr,
-                    } = self.get_packed(*extra);
-
-                    write!(f, "{idx} := container_field_inlined(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, attr) in attrs.enumerate() {
-                            let idx = self.get_packed(attr);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
-                        }
-                        write!(f, "]")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr}")?;
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    if let Some(init_expr) = init_expr {
-                        write!(f, ", init := {init_expr}")?;
-                    }
-                    writeln!(f, ")")?
-                }
-                NodeData::ContainerFieldInlineComma(extra) => {
-                    let ident = self.get_ident(main_token);
-                    let StructFieldProto {
-                        attrs,
-                        align_expr,
-                        type_expr,
-                        init_expr,
-                    } = self.get_packed(*extra);
-
-                    write!(f, "{idx} := container_field_inlined(name := {ident}")?;
-                    if let Some(attrs) = attrs {
-                        write!(f, ", attrs := [")?;
-                        for (i, attr) in attrs.enumerate() {
-                            let idx = self.get_packed(attr);
-                            if i == 0 {
-                                write!(f, "{idx}")?;
-                            } else {
-                                write!(f, ", {idx}")?;
-                            }
-                        }
-                        write!(f, "]")?;
-                    }
-                    if let Some(align_expr) = align_expr {
-                        write!(f, ", align := {align_expr}")?;
-                    }
-                    if let Some(type_expr) = type_expr {
-                        write!(f, ", type := {type_expr}")?;
-                    }
-                    if let Some(init_expr) = init_expr {
-                        write!(f, ", init := {init_expr}")?;
-                    }
-                    writeln!(f, "),")?
-                }
-                NodeData::ImplBlock(cond_expr, decl_block) => writeln!(
-                    f,
-                    "{idx} := impl_block(condition := {cond_expr}, block := {decl_block})"
-                )?,
-                NodeData::ImplBlockAttrs(impl_block) => {
-                    let ImplBlock {
-                        attrs,
-                        cond_expr,
-                        decl_block,
-                    } = self.get_packed(*impl_block);
-                    write!(f, "{idx} := impl_block(attrs := [")?;
-                    for (i, attr) in attrs.enumerate() {
-                        let attr = self.get_packed(attr);
-                        if i == 0 {
-                            write!(f, "{attr}")?;
                         } else {
-                            write!(f, ", {attr}")?;
+                            write!(f, ", annotations := []")?;
                         }
+                        write!(f, "}}")?;
                     }
-                    writeln!(f, "], condition := {cond_expr}, block := {decl_block})")?;
+                    write!(f, "],\n\t")?;
+                    if let Some(type_expr) = type_expr {
+                        write!(f, "type := {type_expr}, ")?
+                    }
+
+                    let init_exprs = self.get_packed(*init_exprs);
+                    write!(f, "init := [")?;
+                    for (i, init_expr) in init_exprs.enumerate() {
+                        let init_expr = self.get_packed(init_expr);
+
+                        if i != 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{init_expr}")?;
+                    }
+                    writeln!(f, "])")?
                 }
                 NodeData::BlockTwo(expr1, expr2) => {
                     if let &Some(expr2) = expr2 {
@@ -1326,6 +1187,7 @@ impl Display for Ast {
                     }
                     writeln!(f, ");")?;
                 }
+                NodeData::ExprSemicolon(expr) => writeln!(f, "{idx} := expr({expr});")?,
                 NodeData::TemplateExprSimple(where_expr, expr) => {
                     if let Some(where_expr) = where_expr {
                         writeln!(
@@ -1574,6 +1436,11 @@ impl Display for Ast {
                     }
                     writeln!(f, ")")?;
                 }
+                NodeData::Label(expr) => {
+                    let ident = self.get_ident(main_token);
+                    writeln!(f, "{idx} := label({ident}, expr := {expr})")?
+                }
+                NodeData::TryBlock(expr) => writeln!(f, "{idx} := try(expr := {expr})")?,
                 NodeData::Fn(proto, expr_block) => {
                     let FnProto {
                         has_trailing_capture_comma,
@@ -1710,6 +1577,133 @@ impl Display for Ast {
                     }
 
                     writeln!(f, "block := {expr_block})")?
+                }
+                NodeData::Payload(is_ptr, has_comma) => {
+                    let ident = self.get_ident(main_token);
+                    writeln!(
+                        f,
+                        "{idx} := payload(ident := {ident}, is_ptr := {is_ptr}, has_comma := {has_comma})"
+                    )?
+                }
+                NodeData::ForSimple(main_expr, else_expr) => {
+                    let ForSimple {
+                        iter_expr1,
+                        iter_expr2,
+                        payload1,
+                        payload2,
+                        expr,
+                    } = self.get_packed(*main_expr);
+                    write!(f, "{idx} := for(iterators := [")?;
+                    if let Some(iter_expr) = iter_expr1 {
+                        write!(f, "{iter_expr}")?;
+                    }
+                    if let Some(iter_expr) = iter_expr2 {
+                        write!(f, ", {iter_expr}")?;
+                    }
+                    write!(f, "], payloads := [")?;
+                    if let Some(payload) = payload1 {
+                        write!(f, "{payload}")?;
+                    }
+                    if let Some(payload) = payload2 {
+                        write!(f, ", {payload}")?;
+                    }
+                    write!(f, "], expr := {expr}")?;
+                    if let Some(else_expr) = else_expr {
+                        write!(f, ", else_expr := {else_expr}")?;
+                    }
+                    writeln!(f, ")")?;
+                }
+                NodeData::ForSimpleInline(main_expr, else_expr) => {
+                    let ForSimple {
+                        iter_expr1,
+                        iter_expr2,
+                        payload1,
+                        payload2,
+                        expr,
+                    } = self.get_packed(*main_expr);
+                    write!(f, "{idx} := for(iterators := [")?;
+                    if let Some(iter_expr) = iter_expr1 {
+                        write!(f, "{iter_expr}")?;
+                    }
+                    if let Some(iter_expr) = iter_expr2 {
+                        write!(f, ", {iter_expr}")?;
+                    }
+                    write!(f, "], payloads := [")?;
+                    if let Some(payload) = payload1 {
+                        write!(f, "{payload}")?;
+                    }
+                    if let Some(payload) = payload2 {
+                        write!(f, ", {payload}")?;
+                    }
+                    write!(f, "], expr := {expr}")?;
+                    if let Some(else_expr) = else_expr {
+                        write!(f, ", else_expr := {else_expr}")?;
+                    }
+                    writeln!(f, ", inline := true)")?;
+                }
+                NodeData::For(main_expr, else_expr) => {
+                    let For {
+                        iter_exprs,
+                        payloads,
+                        expr,
+                    } = self.get_packed(*main_expr);
+                    write!(f, "{idx} := for(iterators := [")?;
+                    if let Some(iter_exprs) = iter_exprs {
+                        for (i, iter) in iter_exprs.enumerate() {
+                            let iter = self.get_packed(iter);
+                            if i != 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{iter}")?;
+                        }
+                    }
+                    write!(f, "], payloads := [")?;
+                    if let Some(payloads) = payloads {
+                        for (i, payload) in payloads.enumerate() {
+                            let payload = self.get_packed(payload);
+                            if i != 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{payload}")?;
+                        }
+                    }
+                    write!(f, "], expr := {expr}")?;
+                    if let Some(else_expr) = else_expr {
+                        write!(f, ", else_expr := {else_expr}")?;
+                    }
+                    writeln!(f, ")")?;
+                }
+                NodeData::ForInline(main_expr, else_expr) => {
+                    let For {
+                        iter_exprs,
+                        payloads,
+                        expr,
+                    } = self.get_packed(*main_expr);
+                    write!(f, "{idx} := for(iterators := [")?;
+                    if let Some(iter_exprs) = iter_exprs {
+                        for (i, iter) in iter_exprs.enumerate() {
+                            let iter = self.get_packed(iter);
+                            if i != 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{iter}")?;
+                        }
+                    }
+                    write!(f, "], payloads := [")?;
+                    if let Some(payloads) = payloads {
+                        for (i, payload) in payloads.enumerate() {
+                            let payload = self.get_packed(payload);
+                            if i != 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{payload}")?;
+                        }
+                    }
+                    write!(f, "], expr := {expr}")?;
+                    if let Some(else_expr) = else_expr {
+                        write!(f, ", else_expr := {else_expr}")?;
+                    }
+                    writeln!(f, ", inline := true)")?;
                 }
                 NodeData::ExprInit(expr, init_list) => {
                     writeln!(f, "{idx} := init(expr := {expr}, init_list := {init_list})")?
@@ -1943,7 +1937,9 @@ impl Display for Ast {
                     let ident = self.get_builtin_ident(main_token);
                     writeln!(f, "{idx} := builtin_ident(name := {ident})")?
                 }
-                NodeData::ImplExpr(type_expr) => writeln!(f, "{idx} := impl(type := {type_expr})")?,
+                NodeData::WhereExpr(type_expr) => {
+                    writeln!(f, "{idx} := where(type := {type_expr})")?
+                }
                 NodeData::SelfType => writeln!(f, "{idx} := Self")?,
                 NodeData::SelfIdent => writeln!(f, "{idx} := self")?,
                 NodeData::Unreachable => writeln!(f, "{idx} := unreachable")?,
@@ -2176,10 +2172,13 @@ impl Display for Ast {
                         writeln!(f, "{idx} := call(expr := {type_expr}, args := [])")?
                     }
                 }
-                NodeData::Call1Comma(type_expr, arg_expr) => writeln!(
-                    f,
-                    "{idx} := call(expr := {type_expr}, args := [{arg_expr},])"
-                )?,
+                NodeData::Call1Comma(type_expr, arg_expr) => {
+                    let arg_expr = arg_expr.unwrap();
+                    writeln!(
+                        f,
+                        "{idx} := call(expr := {type_expr}, args := [{arg_expr},])"
+                    )?
+                }
                 NodeData::Call(type_expr, exprs) => {
                     write!(f, "{idx} := call(expr := {type_expr}, args := [")?;
                     let exprs = self.get_packed(*exprs);
@@ -2233,25 +2232,20 @@ impl Display for Ast {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
-    is_note: bool,
-    token: TokenIndex,
-    data: ErrorData,
+    pub is_warn: bool,
+    pub token: TokenIndex,
+    pub data: ErrorData,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorData {
     DocCommentAtContainerEnd,
     DocCommentOnStatement,
-    DocCommentBetweenDeclProtos,
-    AttributeAtContainerEnd,
-    AttributeOnStatement,
-    AttributeOnExpression,
-    AttributeBeforeThreadLocal,
-    ExpectedDeclBlock,
-    ExpectedDeclBlockStatement,
-    ExpectedStructBlock,
-    ExpectedStructBlockStatement,
-    ExpectedThreadLocalOrGlobalDeclStatement,
+    DocCommentOnExpression,
+    ExpectedBlock,
+    ExpectedBlockStatement,
+    ExpectedVarInlineOrIdent,
+    ExpectedInitExpression,
     ExpectedTemplateExpr,
     ExpectedExpr,
     ExpectedPrimaryExpr,
@@ -2260,16 +2254,53 @@ pub enum ErrorData {
     ExpectedPrefixExpr,
     DoublePubToken,
     DoubleVarToken,
+    DoubleInlineToken,
     DoubleVolatileToken,
     DoubleAlignment,
+    PubTokenOutOfOrder,
     PubTokenAfterVarToken,
     StructFieldWithoutTypeOrInitExpr,
     UnexpectedSemicolonAfterBlock,
     ExpectedToken(lexer::Tag),
-    InvalidByte(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+impl ErrorData {
+    pub fn description(&self) -> Cow<'static, str> {
+        match self {
+            Self::DocCommentAtContainerEnd => "found doc-comment at the end of a container".into(),
+            Self::DocCommentOnStatement => "found doc-comment on a statement".into(),
+            Self::DocCommentOnExpression => "found doc-comment on an expression".into(),
+            Self::ExpectedBlock => "expected a block".into(),
+            Self::ExpectedBlockStatement => "expected a block statement".into(),
+            Self::ExpectedVarInlineOrIdent => {
+                "expected a `var`, `inline` or identifier token".into()
+            }
+            Self::ExpectedInitExpression => "expected an init expression".into(),
+            Self::ExpectedTemplateExpr => "expected a template expression".into(),
+            Self::ExpectedExpr => "expected an expression".into(),
+            Self::ExpectedPrimaryExpr => "expected a primary expression".into(),
+            Self::ExpectedTypeExpr => "expected a type expression".into(),
+            Self::ExpectedTypeExprOrInit => todo!(),
+            Self::ExpectedPrefixExpr => "expected a prefix expression".into(),
+            Self::DoublePubToken => "found a duplicate `pub` token".into(),
+            Self::DoubleVarToken => "found a duplicate `var` token".into(),
+            Self::DoubleInlineToken => "found a duplicate `inline` token".into(),
+            Self::DoubleVolatileToken => "found a duplicate `volatile` token".into(),
+            Self::DoubleAlignment => "found a duplicate alignment specifier".into(),
+            Self::PubTokenOutOfOrder => {
+                "found a `pub` token after a `var` or `inline` token".into()
+            }
+            Self::PubTokenAfterVarToken => todo!(),
+            Self::StructFieldWithoutTypeOrInitExpr => todo!(),
+            Self::UnexpectedSemicolonAfterBlock => {
+                "found an unexpected semicolon after a block".into()
+            }
+            Self::ExpectedToken(tag) => format!("expected token `{tag}`").into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExtraIndex<T: Packable>(NonZero<u32>, PhantomData<fn() -> T>);
 
 impl<T: Packable> ExtraIndex<T> {
@@ -2315,6 +2346,12 @@ impl<T: Packable> ExtraIndex<T> {
 
 impl<T: Packable> packed_stream::DefaultPackable for ExtraIndex<T> {}
 
+impl<T: Packable> Debug for ExtraIndex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ExtraIndex").field(&self.0).finish()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExtraIndexRange<T: Packable>(pub ExtraIndex<T>, pub ExtraIndex<T>);
 
@@ -2328,12 +2365,23 @@ impl<T: Packable> ExtraIndexRange<T> {
     }
 
     pub const fn end(&self) -> ExtraIndex<T> {
-        self.0
+        self.1
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub const fn len(&self) -> usize {
+        let step = const { T::LEN };
+        let end = self.end().get() + 1;
+        let start = self.start().get();
+        (end - start) / step
     }
 }
 
 impl<T: Packable> Packable for ExtraIndexRange<T> {
-    const LEN: usize = <(ExtraIndex<T>, ExtraIndex<T>) as Packable>::LEN;
+    const LEN: usize = <(ExtraIndex<T>, ExtraIndex<T>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.0);
@@ -2346,7 +2394,7 @@ impl<T: Packable> Packable for ExtraIndexRange<T> {
 }
 
 impl<T: Packable> Packable for Option<ExtraIndexRange<T>> {
-    const LEN: usize = <(Option<ExtraIndex<T>>, Option<ExtraIndex<T>>) as Packable>::LEN;
+    const LEN: usize = <(Option<ExtraIndex<T>>, Option<ExtraIndex<T>>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         let (start, end) = match self {
@@ -2387,7 +2435,7 @@ impl<T: Packable> Iterator for ExtraIndexRange<T> {
 pub struct PackedPair<T: Packable, U: Packable>(pub T, pub U);
 
 impl<T: Packable, U: Packable> Packable for PackedPair<T, U> {
-    const LEN: usize = <(T, U) as Packable>::LEN;
+    const LEN: usize = <(T, U)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.0);
@@ -2437,6 +2485,11 @@ impl NodeIndex {
     pub const fn get_u32(self) -> u32 {
         self.0.get() - 1
     }
+
+    pub const fn next(self) -> Self {
+        assert!(self.get_u32() < u32::MAX);
+        Self(unsafe { NonZero::new_unchecked(self.0.get() + 1) })
+    }
 }
 
 impl packed_stream::DefaultPackable for NodeIndex {}
@@ -2467,19 +2520,18 @@ const _: () = const {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeData {
     /// The root node which is guaranteed to be at [`NodeIndex.ROOT`].
-    /// 1. First attribute/member/field
-    /// 2. Last attribute/member/field
+    /// 1. List of attributes/members/fields
     ///
     /// `main_token` is the first token for the source file.
     Root(Option<ExtraIndexRange<NodeIndex>>),
     /// `#![struct]`
-    /// 1. Index to the `#` token.
+    /// 1. Index to the `#!` token.
     /// 2. Index to the `]` token.
     ///
     /// `main_token` is the `#!` token.
     RootStructAttribute(TokenIndex, TokenIndex),
     /// `#![struct const]`
-    /// 1. Index to the `#` token.
+    /// 1. Index to the `#!` token.
     /// 2. Index to the `]` token.
     ///
     /// `main_token` is the `#!` token.
@@ -2513,173 +2565,22 @@ pub enum NodeData {
     ///
     /// `main_token` is the `const` token.
     Const(NodeIndex),
-    /// `thread_local a align(expr) :: generic_expr;`
-    /// 1. Align expression.
-    /// 2. Init expression.
+    /// `#run expr`
+    /// 1. Index to the sub-expression.
     ///
-    /// `main_token` is the identifier token.
-    ThreadLocalDeclAlign(NodeIndex, NodeIndex),
-    /// `thread_local a : type_expr : generic_expr;`
-    /// 1. Optional type expression.
-    /// 2. Init expression.
+    /// `main_token` is the `#run` token.
+    Run(NodeIndex),
+    /// `defer_op expr`
+    /// 1. Index to the sub-expression.
     ///
-    /// `main_token` is the identifier token.
-    ThreadLocalDeclTypeInit(Option<NodeIndex>, NodeIndex),
-    /// `thread_local #[...] a align(expr) : type_expr : generic_expr;`
-    /// 1. Declaration prototype
-    /// 2. Pair of type expr and init expr
-    ///
-    /// `main_token` is the identifier token.
-    ThreadLocalDecl(
-        ExtraIndex<DeclProtoPub>,
-        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
-    ),
-    /// `thread_local #[...] a align(expr_1), ..., #[...] n align(expr_n) : type_expr : generic_expr;`
-    /// 1. Declaration prototype list.
-    /// 2. Type and init expression.
-    ///
-    /// `main_token` is the `thread_local` token.
-    ThreadLocalDeclDestructure(
-        ExtraIndex<ExtraIndexRange<DeclProtoPub>>,
-        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
-    ),
-    /// `a align(expr) :: generic_expr;`
-    /// 1. Align expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    GlobalDeclAlign(NodeIndex, NodeIndex),
-    /// `a : type_expr : generic_expr;`
-    /// 1. Optional type expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    GlobalDeclTypeInit(Option<NodeIndex>, NodeIndex),
-    /// `#[...] a align(expr) : type_expr : generic_expr;`
-    /// 1. Declaration prototype
-    /// 2. Pair of type expr and init expr
-    ///
-    /// `main_token` is the identifier token.
-    GlobalDecl(
-        ExtraIndex<DeclProtoPub>,
-        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
-    ),
-    /// `#[...] a align(expr_1), ..., #[...] n align(expr_n) : type_expr : generic_expr;`
-    /// 1. Declaration prototype list.
-    /// 2. Type and init expression.
+    /// `main_token` is the defer_op token.
+    Defer(NodeIndex),
+    /// `decl_type pub a, ..., z : type_expr = expr_0, ..., expr_n;`
+    /// 1. Declaration list.
+    /// 2. Init expressions.
     ///
     /// `main_token` is the `;` token.
-    GlobalDeclDestructure(
-        ExtraIndex<ExtraIndexRange<DeclProtoPub>>,
-        ExtraIndex<PackedPair<Option<NodeIndex>, NodeIndex>>,
-    ),
-    /// `a align(expr) : type_expr`
-    /// 1. Optional alignment expression.
-    /// 2. Type expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldType(Option<NodeIndex>, NodeIndex),
-    /// `a align(expr) : type_expr,`
-    /// 1. Optional alignment expression.
-    /// 2. Type expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldTypeComma(Option<NodeIndex>, NodeIndex),
-    /// `a align(expr) = generic_expr`
-    /// 1. Optional alignment expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInit(Option<NodeIndex>, NodeIndex),
-    /// `a align(expr) = generic_expr,`
-    /// 1. Optional alignment expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInitComma(Option<NodeIndex>, NodeIndex),
-    /// `a : type_expr = generic_expr`
-    /// 1. Type expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldTypeInit(NodeIndex, NodeIndex),
-    /// `a : type_expr = generic_expr,`
-    /// 1. Type expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldTypeInitComma(NodeIndex, NodeIndex),
-    /// `a align(expr) : type_expr = generic_expr`
-    /// 1. Field prototype.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerField(ExtraIndex<StructFieldProto>),
-    /// `a align(expr) : type_expr = generic_expr,`
-    /// 1. Field prototype.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldComma(ExtraIndex<StructFieldProto>),
-    /// `inline a align(expr) : type_expr`
-    /// 1. Optional alignment expression.
-    /// 2. Type expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineType(Option<NodeIndex>, NodeIndex),
-    /// `inline a align(expr) : type_expr,`
-    /// 1. Optional alignment expression.
-    /// 2. Type expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineTypeComma(Option<NodeIndex>, NodeIndex),
-    /// `inline a align(expr) = generic_expr`
-    /// 1. Optional alignment expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineInit(Option<NodeIndex>, NodeIndex),
-    /// `inline a align(expr) = generic_expr,`
-    /// 1. Optional alignment expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineInitComma(Option<NodeIndex>, NodeIndex),
-    /// `inline a : type_expr = generic_expr`
-    /// 1. Type expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineTypeInit(NodeIndex, NodeIndex),
-    /// `inline a : type_expr = generic_expr,`
-    /// 1. Type expression.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineTypeInitComma(NodeIndex, NodeIndex),
-    /// `inline a align(expr) : type_expr = generic_expr`
-    /// 1. Field prototype.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInline(ExtraIndex<StructFieldProto>),
-    /// `inline a align(expr) : type_expr = generic_expr,`
-    /// 1. Field prototype.
-    /// 2. Init expression.
-    ///
-    /// `main_token` is the identifier token.
-    ContainerFieldInlineComma(ExtraIndex<StructFieldProto>),
-    /// `impl condition {}`
-    /// 1. Condition expression
-    /// 2. Declaration block.
-    ///
-    /// `main_token` is the `impl` token.
-    ImplBlock(NodeIndex, NodeIndex),
-    /// `#[...] impl condition {}`
-    /// 1. Impl block
-    ///
-    /// `main_token` is the `impl` token.
-    ImplBlockAttrs(ExtraIndex<ImplBlock>),
+    Decl(ExtraIndex<DeclList>, ExtraIndex<ExtraIndexRange<NodeIndex>>),
     /// `{lhs rhs}`
     /// 1. First statement.
     /// 2. Second statement.
@@ -2704,6 +2605,11 @@ pub enum NodeData {
     ///
     /// `main_token` is the `{` token.
     BlockSemicolon(ExtraIndexRange<NodeIndex>),
+    /// `expr;`
+    /// 1. Expression.
+    ///
+    /// `main_token` is the `;` token.
+    ExprSemicolon(NodeIndex),
     /// `with[] where(expr) expr`
     /// 1. Optional where expression.
     /// 2. Template expression.
@@ -2740,43 +2646,82 @@ pub enum NodeData {
     /// `main_token` is the op token.
     Unary(NodeIndex),
     /// `asm(expr) { expr }`
-    /// 1. Clobbers expression
-    /// 2. Instructions expression
+    /// 1. Clobbers expression.
+    /// 2. Instructions expression.
     ///
     /// `main_token` is the `asm` token.
     AsmSimple(NodeIndex, NodeIndex),
     /// `asm(expr) volatile { expr }`
-    /// 1. Clobbers expression
-    /// 2. Instructions expression
+    /// 1. Clobbers expression.
+    /// 2. Instructions expression.
     ///
     /// `main_token` is the `asm` token.
     AsmVolatileSimple(NodeIndex, NodeIndex),
     /// `asm[...](..., expr) -> (...) { expr }`
-    /// 1. Asm prototype
-    /// 2. Instructions expression
+    /// 1. Asm prototype.
+    /// 2. Instructions expression.
     ///
     /// `main_token` is the `asm` token.
     Asm(ExtraIndex<AsmProto>, NodeIndex),
     /// `asm[...](..., expr) volatile -> (...) { expr }`
-    /// 1. Asm prototype
-    /// 2. Instructions expression
+    /// 1. Asm prototype.
+    /// 2. Instructions expression.
     ///
     /// `main_token` is the `asm` token.
     AsmVolatile(ExtraIndex<AsmProto>, NodeIndex),
     /// `jump_op label expr`
-    /// 1. Jump label
-    /// 2. Jump value
+    /// 1. Jump label.
+    /// 2. Jump value.
     ///
     /// `main_token` is the jump_op token.
     Jump(Option<TokenIndex>, Option<NodeIndex>),
+    /// `label: expr`
+    /// 1. Sub-expression.
+    ///
+    /// `main_token` is the label token.
+    Label(NodeIndex),
+    /// `try {...}`
+    /// 1. Block.
+    ///
+    /// `main_token` is the `try` token.
+    TryBlock(NodeIndex),
     /// `fn[...](...) modifier -> ret_type where(...) { ... }`
     /// 1. Funtion prototype
-    /// 2. Expression block.
+    /// 2. Block.
     ///
     /// `main_token` is the `fn` token.
     Fn(ExtraIndex<FnProto>, NodeIndex),
+    /// `|... *ident, ...|`
+    /// 1. Is pointer payload.
+    /// 2. Has trailing comma.
+    ///
+    /// `main_token` is the ident token.
+    Payload(bool, bool),
     // TODO: If
-    // TODO: For
+    /// `for (a, b) |c, d| expr else expr`
+    /// 1. For expression without else expression.
+    /// 2. Optional else expression
+    ///
+    /// `main_token` is the `for` token.
+    ForSimple(ExtraIndex<ForSimple>, Option<NodeIndex>),
+    /// `for (a, b) |c, d| inline expr else expr`
+    /// 1. For expression without else expression.
+    /// 2. Optional else expression
+    ///
+    /// `main_token` is the `for` token.
+    ForSimpleInline(ExtraIndex<ForSimple>, Option<NodeIndex>),
+    /// `for (a, b, c, d) |e, f, g, h| expr else expr`
+    /// 1. For expression without else expression.
+    /// 2. Optional else expression
+    ///
+    /// `main_token` is the `for` token.
+    For(ExtraIndex<For>, Option<NodeIndex>),
+    /// `for (a, b, c, d) |e, f, g, h| inline expr else expr`
+    /// 1. For expression without else expression.
+    /// 2. Optional else expression
+    ///
+    /// `main_token` is the `for` token.
+    ForInline(ExtraIndex<For>, Option<NodeIndex>),
     // TODO: While
     /// `expr {...}`
     /// 1. Expression.
@@ -2929,11 +2874,11 @@ pub enum NodeData {
     ///
     /// `main_token` is the identifier token.
     BuiltinIdent,
-    /// `impl type_expr`
+    /// `where type_expr`
     /// 1. Type expression
     ///
-    /// `main_token` is the `impl` token.
-    ImplExpr(NodeIndex),
+    /// `main_token` is the `where` token.
+    WhereExpr(NodeIndex),
     /// `Self`
     ///
     /// `main_token` is the `Self` token.
@@ -2982,13 +2927,13 @@ pub enum NodeData {
     /// `main_token` is the container token.
     ContainerConst(Option<NodeIndex>, NodeIndex),
     /// `namespace {...}`
-    /// 1. Declaration block
+    /// 1. Block
     ///
     /// `main_token` is the `namespace` token.
     Namespace(NodeIndex),
     /// `#primitive("...", {...})`
     /// 1. String token
-    /// 2. Declaration block
+    /// 2. Block
     ///
     /// `main_token` is the `#primitive` token.
     Primitive(TokenIndex, NodeIndex),
@@ -3086,7 +3031,7 @@ pub enum NodeData {
     /// 2. Expression
     ///
     /// `main_token` is the `)` token.
-    Call1Comma(NodeIndex, NodeIndex),
+    Call1Comma(NodeIndex, Option<NodeIndex>),
     /// `type_expr(expr, ..., expr)`
     /// 1. Type expression
     /// 2. Expression list
@@ -3113,106 +3058,115 @@ pub enum NodeData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DeclProtoPub {
-    attrs: Option<ExtraIndexRange<NodeIndex>>,
-    is_pub: bool,
-    is_var: bool,
-    ident: TokenIndex,
-    align_expr: Option<NodeIndex>,
+pub struct DeclProto {
+    pub is_pub: bool,
+    pub is_var: bool,
+    pub is_inline: bool,
+    pub ident: TokenIndex,
+    pub align_expr: Option<NodeIndex>,
+    pub annotations: Option<ExtraIndexRange<NodeIndex>>,
 }
 
-impl Packable for DeclProtoPub {
-    const LEN: usize = <(BitPacked<(bool, bool)>, TokenIndex, Option<NodeIndex>) as Packable>::LEN;
+impl Packable for DeclProto {
+    const LEN: usize = <(
+        BitPacked<(bool, bool, bool)>,
+        TokenIndex,
+        Option<NodeIndex>,
+        Option<ExtraIndexRange<NodeIndex>>,
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.attrs);
-        buffer.write(BitPacked::pack_bits((self.is_pub, self.is_var)));
+        buffer.write(BitPacked::pack_bits((
+            self.is_pub,
+            self.is_var,
+            self.is_inline,
+        )));
         buffer.write(self.ident);
         buffer.write(self.align_expr);
+        buffer.write(self.annotations);
     }
 
     fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        let attrs = buffer.read();
-        let (is_pub, is_var) = buffer.read::<BitPacked<(bool, bool)>>().unpack();
+        let (is_pub, is_var, is_inline) = buffer.read::<BitPacked<(bool, bool, bool)>>().unpack();
         let ident = buffer.read();
         let align_expr = buffer.read();
+        let annotations = buffer.read();
         Self {
-            attrs,
             is_pub,
             is_var,
+            is_inline,
             ident,
             align_expr,
+            annotations,
         }
     }
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StructFieldProto {
-    attrs: Option<ExtraIndexRange<NodeIndex>>,
-    align_expr: Option<NodeIndex>,
-    type_expr: Option<NodeIndex>,
-    init_expr: Option<NodeIndex>,
+pub enum DeclType {
+    Normal = 0,
+    Const = 1,
+    ThreadLocal = 2,
+    Static = 3,
 }
 
-impl Packable for StructFieldProto {
+impl packed_stream::DefaultPackable for DeclType {}
+
+impl packed_stream::BitPackable for DeclType {
+    const BITS: usize = 2;
+
+    fn pack(self) -> u32 {
+        self as u32
+    }
+
+    fn unpack(value: u32) -> Self {
+        debug_assert!(value <= Self::Static as u32);
+        unsafe { std::mem::transmute(value as u8) }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DeclList {
+    pub decl_type: DeclType,
+    pub prototypes: ExtraIndexRange<DeclProto>,
+    pub type_expr: Option<NodeIndex>,
+}
+
+impl Packable for DeclList {
     const LEN: usize = <(
-        Option<ExtraIndexRange<NodeIndex>>,
+        BitPacked<DeclType>,
+        ExtraIndexRange<DeclProto>,
         Option<NodeIndex>,
-        Option<NodeIndex>,
-        Option<NodeIndex>,
-    ) as Packable>::LEN;
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.attrs);
-        buffer.write(self.align_expr);
+        buffer.write(BitPacked::pack_bits(self.decl_type));
+        buffer.write(self.prototypes);
         buffer.write(self.type_expr);
-        buffer.write(self.init_expr);
     }
 
     fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        let decl_type = buffer.read::<BitPacked<DeclType>>().unpack();
+        let prototypes = buffer.read();
+        let type_expr = buffer.read();
         Self {
-            attrs: buffer.read(),
-            align_expr: buffer.read(),
-            type_expr: buffer.read(),
-            init_expr: buffer.read(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImplBlock {
-    attrs: ExtraIndexRange<NodeIndex>,
-    cond_expr: NodeIndex,
-    decl_block: NodeIndex,
-}
-
-impl Packable for ImplBlock {
-    const LEN: usize = <(ExtraIndexRange<NodeIndex>, NodeIndex, NodeIndex) as Packable>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.attrs);
-        buffer.write(self.cond_expr);
-        buffer.write(self.decl_block);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            attrs: buffer.read(),
-            cond_expr: buffer.read(),
-            decl_block: buffer.read(),
+            decl_type,
+            prototypes,
+            type_expr,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TemplateExprArg {
-    ident: TokenIndex,
-    type_expr: NodeIndex,
-    init_expr: Option<NodeIndex>,
+    pub ident: TokenIndex,
+    pub type_expr: NodeIndex,
+    pub init_expr: Option<NodeIndex>,
 }
 
 impl Packable for TemplateExprArg {
-    const LEN: usize = <(TokenIndex, NodeIndex, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, NodeIndex, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3236,7 +3190,7 @@ pub struct TemplateExprProto {
 }
 
 impl Packable for TemplateExprProto {
-    const LEN: usize = <(ExtraIndexRange<TemplateExprArg>, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(ExtraIndexRange<TemplateExprArg>, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.args);
@@ -3259,7 +3213,7 @@ pub struct AsmCapture {
 }
 
 impl Packable for AsmCapture {
-    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3283,7 +3237,7 @@ pub struct AsmInput {
 }
 
 impl Packable for AsmInput {
-    const LEN: usize = <(TokenIndex, TokenIndex) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, TokenIndex)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3306,7 +3260,7 @@ pub struct AsmOutput {
 }
 
 impl Packable for AsmOutput {
-    const LEN: usize = <(TokenIndex, NodeIndex, TokenIndex) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, NodeIndex, TokenIndex)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3339,7 +3293,7 @@ impl Packable for AsmProto {
         Option<ExtraIndexRange<AsmCapture>>,
         Option<ExtraIndexRange<AsmInput>>,
         Option<ExtraIndexRange<AsmOutput>>,
-    ) as Packable>::LEN;
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(BitPacked::pack_bits((
@@ -3374,7 +3328,7 @@ pub struct FnContext {
 }
 
 impl Packable for FnContext {
-    const LEN: usize = <(bool, TokenIndex, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(bool, TokenIndex, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.is_optional);
@@ -3399,7 +3353,7 @@ pub struct FnCapture {
 }
 
 impl Packable for FnCapture {
-    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3428,7 +3382,7 @@ impl Packable for FnReceiver {
     const LEN: usize = <(
         BitPacked<(FnArgModifier, bool, Option<PointerType>)>,
         TokenIndex,
-    ) as Packable>::LEN;
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(BitPacked::pack_bits((
@@ -3467,7 +3421,7 @@ impl Packable for FnArg {
         TokenIndex,
         NodeIndex,
         Option<NodeIndex>,
-    ) as Packable>::LEN;
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(BitPacked::pack_bits((self.modifier, self.is_var)));
@@ -3512,7 +3466,7 @@ impl Packable for FnProto {
         Option<NodeIndex>,
         Option<NodeIndex>,
         Option<NodeIndex>,
-    ) as Packable>::LEN;
+    )>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(BitPacked::pack_bits((
@@ -3568,7 +3522,7 @@ impl packed_stream::BitPackable for FnArgModifier {
     }
 
     fn unpack(value: u32) -> Self {
-        debug_assert!(value < Self::NoAlias as u32);
+        debug_assert!(value <= Self::NoAlias as u32);
         unsafe { std::mem::transmute(value as u8) }
     }
 }
@@ -3595,8 +3549,121 @@ impl packed_stream::BitPackable for FnModifier {
     }
 
     fn unpack(value: u32) -> Self {
-        debug_assert!(value < Self::NoInline as u32);
+        debug_assert!(value <= Self::NoInline as u32);
         unsafe { std::mem::transmute(value as u8) }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ForSimple {
+    iter_expr1: Option<NodeIndex>,
+    iter_expr2: Option<NodeIndex>,
+    payload1: Option<NodeIndex>,
+    payload2: Option<NodeIndex>,
+    expr: NodeIndex,
+}
+
+impl Packable for ForSimple {
+    const LEN: usize = <(
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+        Option<NodeIndex>,
+        NodeIndex,
+    )>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.iter_expr1);
+        buffer.write(self.iter_expr2);
+        buffer.write(self.payload1);
+        buffer.write(self.payload2);
+        buffer.write(self.expr);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            iter_expr1: buffer.read(),
+            iter_expr2: buffer.read(),
+            payload1: buffer.read(),
+            payload2: buffer.read(),
+            expr: buffer.read(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct For {
+    iter_exprs: Option<ExtraIndexRange<NodeIndex>>,
+    payloads: Option<ExtraIndexRange<NodeIndex>>,
+    expr: NodeIndex,
+}
+
+impl Packable for For {
+    const LEN: usize = <(
+        Option<ExtraIndexRange<NodeIndex>>,
+        Option<ExtraIndexRange<NodeIndex>>,
+        NodeIndex,
+    )>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.iter_exprs);
+        buffer.write(self.payloads);
+        buffer.write(self.expr);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            iter_exprs: buffer.read(),
+            payloads: buffer.read(),
+            expr: buffer.read(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct While {
+    condition_expr: NodeIndex,
+    payload: Option<NodeIndex>,
+    expr: NodeIndex,
+}
+
+impl Packable for While {
+    const LEN: usize = <(NodeIndex, Option<NodeIndex>, NodeIndex)>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.condition_expr);
+        buffer.write(self.payload);
+        buffer.write(self.expr);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            condition_expr: buffer.read(),
+            payload: buffer.read(),
+            expr: buffer.read(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WhilePayloadElse {
+    condition_expr: NodeIndex,
+    payload: NodeIndex,
+}
+
+impl Packable for WhilePayloadElse {
+    const LEN: usize = <(NodeIndex, NodeIndex)>::LEN;
+
+    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
+        buffer.write(self.condition_expr);
+        buffer.write(self.payload);
+    }
+
+    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
+        Self {
+            condition_expr: buffer.read(),
+            payload: buffer.read(),
+        }
     }
 }
 
@@ -3633,7 +3700,7 @@ impl packed_stream::BitPackable for PointerType {
     }
 
     fn unpack(value: u32) -> Self {
-        debug_assert!(value < Self::OptVarOptVolatile as u32);
+        debug_assert!(value <= Self::OptVarOptVolatile as u32);
         unsafe { std::mem::transmute(value as u8) }
     }
 }
@@ -3645,7 +3712,7 @@ pub struct FieldInit {
 }
 
 impl Packable for FieldInit {
-    const LEN: usize = <(TokenIndex, NodeIndex) as Packable>::LEN;
+    const LEN: usize = <(TokenIndex, NodeIndex)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.ident);
@@ -3667,7 +3734,7 @@ pub struct SinglePointerPrefix {
 }
 
 impl Packable for SinglePointerPrefix {
-    const LEN: usize = <(PointerType, NodeIndex) as Packable>::LEN;
+    const LEN: usize = <(PointerType, NodeIndex)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.pointer_type);
@@ -3690,7 +3757,7 @@ pub struct MultiPointerPrefix {
 }
 
 impl Packable for MultiPointerPrefix {
-    const LEN: usize = <(PointerType, Option<NodeIndex>, Option<NodeIndex>) as Packable>::LEN;
+    const LEN: usize = <(PointerType, Option<NodeIndex>, Option<NodeIndex>)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.pointer_type);
@@ -3715,7 +3782,7 @@ pub struct Matrix {
 }
 
 impl Packable for Matrix {
-    const LEN: usize = <(NodeIndex, NodeIndex, NodeIndex) as Packable>::LEN;
+    const LEN: usize = <(NodeIndex, NodeIndex, NodeIndex)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.rows);
@@ -3739,7 +3806,7 @@ pub struct TemplateTypeExprArg {
 }
 
 impl Packable for TemplateTypeExprArg {
-    const LEN: usize = <(NodeIndex, bool) as Packable>::LEN;
+    const LEN: usize = <(NodeIndex, bool)>::LEN;
 
     fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
         buffer.write(self.type_expr);
@@ -3763,6 +3830,14 @@ struct Parser<'a> {
     extra_data: Vec<u32>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Snapshot {
+    index: TokenIndex,
+    errors_idx: usize,
+    nodes_idx: usize,
+    extra_data_idx: usize,
+}
+
 #[allow(dead_code)]
 impl Parser<'_> {
     fn next(&mut self) -> TokenIndex {
@@ -3771,8 +3846,26 @@ impl Parser<'_> {
         idx
     }
 
-    fn rollback(&mut self, positions: u32) {
-        self.index = TokenIndex::new(self.index.get() - positions);
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            index: self.index,
+            errors_idx: self.errors.len(),
+            nodes_idx: self.nodes.len(),
+            extra_data_idx: self.extra_data.len(),
+        }
+    }
+
+    fn rollback(&mut self, snapshot: Snapshot) {
+        let Snapshot {
+            index,
+            errors_idx,
+            nodes_idx,
+            extra_data_idx,
+        } = snapshot;
+        self.index = index;
+        self.errors.drain(errors_idx..);
+        self.nodes.drain(nodes_idx..);
+        self.extra_data.drain(extra_data_idx..);
     }
 
     fn eat_token(&mut self, tag: lexer::Tag) -> bool {
@@ -3872,7 +3965,7 @@ impl Parser<'_> {
 
     fn warn(&mut self, data: ErrorData) {
         self.warn_msg(Error {
-            is_note: false,
+            is_warn: true,
             token: self.index,
             data,
         });
@@ -3880,7 +3973,7 @@ impl Parser<'_> {
 
     fn warn_expected(&mut self, tag: lexer::Tag) {
         self.warn_msg(Error {
-            is_note: false,
+            is_warn: true,
             token: self.index,
             data: ErrorData::ExpectedToken(tag),
         })
@@ -3892,7 +3985,7 @@ impl Parser<'_> {
 
     fn fail(&mut self, data: ErrorData) -> Result<std::convert::Infallible, ()> {
         self.fail_msg(Error {
-            is_note: false,
+            is_warn: false,
             token: self.index,
             data,
         })
@@ -3900,7 +3993,7 @@ impl Parser<'_> {
 
     fn fail_expected(&mut self, tag: lexer::Tag) -> Result<std::convert::Infallible, ()> {
         self.fail_msg(Error {
-            is_note: false,
+            is_warn: false,
             token: self.index,
             data: ErrorData::ExpectedToken(tag),
         })
@@ -3949,7 +4042,6 @@ fn parse_root(p: &mut Parser<'_>) -> Result<(), ()> {
     let mut root_nodes = vec![];
 
     // Parse all annotations and attributes.
-    let mut parse_as_struct = false;
     loop {
         if p.eat_token(Token!(#<inner_doc_comment>)) {
             continue;
@@ -3961,17 +4053,12 @@ fn parse_root(p: &mut Parser<'_>) -> Result<(), ()> {
         match parse_root_attribute(p)? {
             Some(attribute) => {
                 root_nodes.push(attribute);
-                parse_as_struct = true
             }
             None => break,
         };
     }
 
-    let members = if parse_as_struct {
-        parse_struct_block_members(p, true)?
-    } else {
-        parse_decl_block_members(p, true)?
-    };
+    let members = parse_block_members(p, true)?;
     root_nodes.extend(members);
 
     p.nodes[0].data = NodeData::Root(p.push_packed_list(&root_nodes));
@@ -3980,17 +4067,17 @@ fn parse_root(p: &mut Parser<'_>) -> Result<(), ()> {
 
 // Blocks
 
-/// DeclBlock <- { DeclBlockContents }
-fn expect_decl_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+/// Block <- LBRACE BlockContents RBRACE
+fn expect_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let start = match p.take_token(Token!('{')) {
         Some(token) => token,
         None => {
-            p.fail(ErrorData::ExpectedDeclBlock)?;
+            p.fail(ErrorData::ExpectedBlock)?;
             unreachable!();
         }
     };
 
-    let members = parse_decl_block_members(p, false)?;
+    let members = parse_block_members(p, false)?;
     p.expect_token(Token!('}'))?;
 
     if members.len() < 2 {
@@ -4003,217 +4090,36 @@ fn expect_decl_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     }
 }
 
-/// DeclBlockContents <- InnerAttribute* DeclBlockStatement*
-/// DeclBlockStatement
-///     <- KEYWORD_const ExprBlock
-///      / ContainerDeclStatement
-fn parse_decl_block_members(p: &mut Parser<'_>, is_root: bool) -> Result<Vec<NodeIndex>, ()> {
+/// BlockContents <- InnerAttribute* Statement*
+fn parse_block_members(p: &mut Parser<'_>, is_root: bool) -> Result<Vec<NodeIndex>, ()> {
     let mut nodes = vec![];
     while let Some(attr) = parse_inner_attribute(p)? {
         nodes.push(attr);
     }
 
     loop {
-        match p.tag() {
-            Token!(#<eof>) => {
-                assert!(is_root);
-                break;
-            }
-            Token!('}') => {
-                if is_root {
-                    p.fail_expected(Token!(#<eof>))?;
-                }
-                break;
-            }
-            Token!(const) => nodes.push(expect_const_block(p)?),
-            Token!(thread_local) => nodes.push(expect_thread_local_decl_statement(p)?),
-            Token!(pub) | Token!(var) | Token!(#<identifier>) => {
-                nodes.push(expect_global_decl_statement(p, vec![])?)
-            }
-            Token!(#) | Token!(#<outer_doc_comment>) => nodes.push(expect_decl_statement(p)?),
-            _ => {
-                p.fail(ErrorData::ExpectedDeclBlockStatement)?;
-                unreachable!()
-            }
-        }
-    }
-
-    Ok(nodes)
-}
-
-/// ExprBlock <- LBRACE ExprBlockContents RBRACE
-/// ExprBlockContents <- ExprBlockStatement*
-/// ExprBlockStatement
-///    <- KEYWORD_const ExprBlock
-///     / DeclStatement
-///     / KEYWORD_defer BlockExprStatement
-///     / KEYWORD_cont_defer BlockExprStatement
-///     / KEYWORD_err_defer BlockExprStatement
-///     / IfStatement
-///     / LabeledStatement
-///     / AssignExpr
-fn expect_expr_block(p: &mut Parser<'_>, warn_on_semicolon: bool) -> Result<NodeIndex, ()> {
-    let start = p.expect_token(Token!('{'))?;
-
-    let mut scratch: Vec<NodeIndex> = vec![];
-    loop {
-        if p.eat_token(Token!('}')) {
-            break;
-        } else if p.peek(Token!(const)) && p.peek2(Token!('{')) {
-            scratch.push(expect_const_block(p)?);
-        } else {
-            todo!()
-        }
-    }
-
-    let node_idx = NodeIndex::new(p.nodes.len());
-    if p.peek(Token!(;)) {
-        if warn_on_semicolon {
-            p.warn(ErrorData::UnexpectedSemicolonAfterBlock);
-            _ = p.next();
-        }
-
-        if scratch.len() <= 2 {
-            let first = scratch.first().copied();
-            let second = scratch.get(1).copied();
-            p.nodes.push(Node {
-                main_token: start,
-                data: NodeData::BlockTwoSemicolon(first, second),
-            });
-        } else {
-            let members = p.push_packed_list(&scratch).unwrap();
-            p.nodes.push(Node {
-                main_token: start,
-                data: NodeData::BlockSemicolon(members),
-            })
-        }
-    } else {
-        if scratch.len() <= 2 {
-            let first = scratch.first().copied();
-            let second = scratch.get(1).copied();
-            p.nodes.push(Node {
-                main_token: start,
-                data: NodeData::BlockTwo(first, second),
-            });
-        } else {
-            let members = p.push_packed_list(&scratch).unwrap();
-            p.nodes.push(Node {
-                main_token: start,
-                data: NodeData::Block(members),
-            });
-        }
-    }
-
-    Ok(node_idx)
-}
-
-/// StructBlock <- LBRACE StructBlockContents RBRACE
-fn expect_struct_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let start = match p.take_token(Token!('{')) {
-        Some(token) => token,
-        None => {
-            p.fail(ErrorData::ExpectedStructBlock)?;
-            unreachable!();
-        }
-    };
-
-    let members = parse_struct_block_members(p, false)?;
-    p.expect_token(Token!('}'))?;
-
-    if members.len() < 2 {
-        let first = members.first().copied();
-        let second = members.get(1).copied();
-        Ok(p.push_node(start, NodeData::BlockTwo(first, second)))
-    } else {
-        let members = p.push_packed_list(&members).unwrap();
-        Ok(p.push_node(start, NodeData::Block(members)))
-    }
-}
-
-/// StructBlockContents <- InnerAttribute* StructBlockStatement*
-/// StructBlockStatement
-///     <- KEYWORD_const ExprBlock
-///      / ImplStatement
-///      / StructField
-///      / ContainerDeclStatement
-fn parse_struct_block_members(p: &mut Parser<'_>, is_root: bool) -> Result<Vec<NodeIndex>, ()> {
-    let mut nodes = vec![];
-    while let Some(attr) = parse_inner_attribute(p)? {
-        nodes.push(attr);
-    }
-
-    loop {
-        let mut has_doc_comment = false;
-        let mut attrs = vec![];
-        loop {
-            let (idx, skipped) = parse_outer_attribute(p)?;
-            has_doc_comment |= skipped;
-            if let Some(idx) = idx {
-                attrs.push(idx);
-            } else {
-                break;
-            }
-        }
-
+        let has_doc_comment = parse_outer_doc_commens(p);
         match p.tag() {
             Token!(#<eof>) => {
                 if has_doc_comment {
                     p.warn(ErrorData::DocCommentAtContainerEnd);
-                } else if !attrs.is_empty() {
-                    p.warn(ErrorData::AttributeAtContainerEnd);
                 }
+
                 assert!(is_root);
                 break;
             }
             Token!('}') => {
                 if has_doc_comment {
                     p.warn(ErrorData::DocCommentAtContainerEnd);
-                } else if !attrs.is_empty() {
-                    p.warn(ErrorData::AttributeAtContainerEnd);
                 }
+
                 if is_root {
                     p.fail_expected(Token!(#<eof>))?;
                 }
                 break;
             }
-            // const {...}
-            Token!(const) => {
-                if has_doc_comment {
-                    p.warn(ErrorData::DocCommentOnStatement);
-                } else if !attrs.is_empty() {
-                    p.warn(ErrorData::AttributeOnStatement);
-                }
-                nodes.push(expect_const_block(p)?);
-            }
-            // impl condition {...}
-            Token!(impl) => {
-                if has_doc_comment {
-                    p.warn(ErrorData::DocCommentOnStatement);
-                }
-                nodes.push(expect_impl_block_statement(p, Some(attrs))?);
-            }
-            // thread_local pub var a ...
-            Token!(thread_local) => {
-                if !attrs.is_empty() {
-                    p.warn(ErrorData::AttributeBeforeThreadLocal);
-                }
-                nodes.push(expect_thread_local_decl_statement(p)?);
-            }
-            // pub var a ...
-            Token!(pub) | Token!(var) => {
-                nodes.push(expect_global_decl_statement(p, attrs)?);
-            }
-            // inline a ...
-            Token!(inline) => nodes.push(expect_inlined_struct_field(p, attrs)?),
-            // a ..
-            Token!(#<identifier>) => {
-                nodes.push(expect_struct_field_or_global_container_decl_statement(
-                    p, attrs,
-                )?);
-            }
             _ => {
-                p.fail(ErrorData::ExpectedStructBlockStatement)?;
-                unreachable!()
+                nodes.push(expect_statement(p)?);
             }
         }
     }
@@ -4223,600 +4129,525 @@ fn parse_struct_block_members(p: &mut Parser<'_>, is_root: bool) -> Result<Vec<N
 
 // Statement
 
-/// ConstBlock <- const ExprBlock
-fn expect_const_block(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let const_token = p.expect_token(Token!(const))?;
-    let expr_block = expect_expr_block(p, true)?;
-    if p.peek(Token!(;)) {
-        p.warn(ErrorData::UnexpectedSemicolonAfterBlock);
-        _ = p.next();
-    }
-
-    Ok(p.push_node(const_token, NodeData::Const(expr_block)))
-}
-
-/// ContainerDeclStatement <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_decl_statement(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let mut attrs = vec![];
-    loop {
-        let (idx, _) = parse_outer_attribute(p)?;
-        if let Some(idx) = idx {
-            attrs.push(idx);
-        } else {
-            break;
-        }
-    }
-
+/// Statement
+///    <- KEYWORD_const BlockExpr
+///     / KEYWORD_run BlockExpr
+///     / KEYWORD_defer BlockExprStatement
+///     / KEYWORD_cont_defer BlockExprStatement
+///     / KEYWORD_err_defer BlockExprStatement
+///     / IfStatement
+///     / LabeledStatement
+///     / DeclStatement
+///     / ExprStatement
+fn expect_statement(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let has_doc_comment = parse_outer_doc_commens(p);
     match p.tag() {
-        Token!(thread_local) => {
-            if !attrs.is_empty() {
-                p.warn(ErrorData::AttributeBeforeThreadLocal);
+        Token!(const) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
             }
-            expect_thread_local_decl_statement(p)
+            expect_statement_const(p)
         }
-        Token!(pub) | Token!(var) | Token!(#<identifier>) => expect_global_decl_statement(p, attrs),
+        Token!(#run) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_run(p)
+        }
+        Token!(defer) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_defer(p)
+        }
+        Token!(cont_defer) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_cont_defer(p)
+        }
+        Token!(err_defer) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_err_defer(p)
+        }
+        Token!(if) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_if(p)
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!('{')) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            let label = p.next();
+            p.next();
+            let block = expect_block(p)?;
+            Ok(p.push_node(label, NodeData::Label(block)))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(for)) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            let label = p.next();
+            p.next();
+            let stmt = expect_statement_for(p)?;
+            Ok(p.push_node(label, NodeData::Label(stmt)))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(while)) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            let label = p.next();
+            p.next();
+            let stmt = expect_statement_while(p)?;
+            Ok(p.push_node(label, NodeData::Label(stmt)))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(switch)) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            todo!()
+        }
+        Token!('{') => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_block(p)
+        }
+        Token!(for) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_for(p)
+        }
+        Token!(while) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            expect_statement_while(p)
+        }
+        Token!(switch) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnStatement);
+            }
+            todo!()
+        }
+        Token!(thread_local) => expect_statement_global_decl_thread_local(p),
+        Token!(static) => expect_statement_global_decl_static(p),
+        Token!(pub) | Token!(var) | Token!(inline) => expect_statement_const_or_global_decl(p),
+        Token!(#<identifier>) => expect_statement_decl_or_expr(p),
+        Token!(with)
+        | Token!(!)
+        | Token!(-)
+        | Token!(~)
+        | Token!(-%)
+        | Token!(...)
+        | Token!(asm)
+        | Token!(break)
+        | Token!(continue)
+        | Token!(return)
+        | Token!(throw)
+        | Token!(fn)
+        | Token!(?)
+        | Token!('[')
+        | Token!(*)
+        | Token!(.)
+        | Token!(#)
+        | Token!('(')
+        | Token!(#<core_identifier>)
+        | Token!(#<builtin_identifier>)
+        | Token!(where)
+        | Token!(Self)
+        | Token!(self)
+        | Token!(unreachable)
+        | Token!(#<char_literal>)
+        | Token!(#<float_literal>)
+        | Token!(#<int_literal>)
+        | Token!(#<string_literal>)
+        | Token!(#<raw_string_literal>)
+        | Token!(enum)
+        | Token!(fnptr)
+        | Token!(namespace)
+        | Token!(opaque)
+        | Token!(#primitive)
+        | Token!(struct)
+        | Token!(union) => {
+            if has_doc_comment {
+                p.warn(ErrorData::DocCommentOnExpression);
+            }
+            expect_statement_expr(p)
+        }
         _ => {
-            p.fail(ErrorData::ExpectedThreadLocalOrGlobalDeclStatement)?;
+            p.fail(ErrorData::ExpectedBlockStatement)?;
             unreachable!()
         }
     }
 }
 
-/// ContainerDeclStatement <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_thread_local_decl_statement(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let thread_local_token = p.expect_token(Token!(thread_local))?;
-    let mut decls = vec![];
-    decls.push(expect_decl_proto_pub(p, None, true)?);
-    while p.peek(Token!(,)) {
-        p.next();
-        decls.push(expect_decl_proto_pub(p, None, false)?);
-    }
+/// KEYWORD_const BlockExpr
+fn expect_statement_const(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let const_token = p.expect_token(Token!(const))?;
+    let block_expr = expect_block_expr(p)?;
+    Ok(p.push_node(const_token, NodeData::Const(block_expr)))
+}
 
-    let (type_expr, init_expr) = if p.eat_token(Token!(:)) {
-        if p.eat_token(Token!(:)) {
-            let expr = expect_template_expr(p)?;
-            p.expect_token(Token!(;))?;
-            (None, expr)
-        } else {
-            let type_expr = expect_type_expr(p)?;
-            p.expect_token(Token!(:))?;
-            let expr = expect_template_expr(p)?;
-            p.expect_token(Token!(;))?;
-            (Some(type_expr), expr)
-        }
-    } else {
-        p.expect_token(Token!(::))?;
-        let expr = expect_template_expr(p)?;
-        p.expect_token(Token!(;))?;
-        (None, expr)
-    };
+/// KEYWORD_run BlockExpr
+fn expect_statement_run(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let run_token = p.expect_token(Token!(#run))?;
+    let block_expr = expect_block_expr(p)?;
+    Ok(p.push_node(run_token, NodeData::Run(block_expr)))
+}
 
-    if decls.len() == 1 {
-        let decl @ DeclProtoPub {
-            attrs,
-            is_pub,
-            is_var,
-            ident,
-            align_expr,
-        } = decls[0];
-        if attrs.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some()) {
-            let decl = p.push_packed(decl);
-            let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
-            Ok(p.push_node(ident, NodeData::ThreadLocalDecl(decl, type_init_expr)))
-        } else if let Some(align_expr) = align_expr {
-            Ok(p.push_node(ident, NodeData::ThreadLocalDeclAlign(align_expr, init_expr)))
-        } else {
-            Ok(p.push_node(
-                ident,
-                NodeData::ThreadLocalDeclTypeInit(type_expr, init_expr),
-            ))
-        }
+/// BlockExpr <- BlockLabel? Block
+fn expect_block_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    if let Some(label) = p.take_token(Token!(#<identifier>)) {
+        p.expect_token(Token!(:))?;
+        let block = expect_block(p)?;
+        Ok(p.push_node(label, NodeData::Label(block)))
     } else {
-        let protos = p.push_packed_list(&decls).unwrap();
-        let protos = p.push_packed(protos);
-        let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
-        Ok(p.push_node(
-            thread_local_token,
-            NodeData::ThreadLocalDeclDestructure(protos, type_init_expr),
-        ))
+        expect_block(p)
     }
 }
 
-/// ContainerDeclStatement <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_global_decl_statement(
-    p: &mut Parser<'_>,
-    attrs: Vec<NodeIndex>,
-) -> Result<NodeIndex, ()> {
-    let proto = expect_decl_proto_pub(p, Some(attrs), true)?;
-    if p.peek(Token!(,)) {
-        p.next();
-        return expect_global_decl_statement2(p, proto);
-    }
-
-    let (type_expr, init_expr) = if p.eat_token(Token!(:)) {
-        if p.eat_token(Token!(:)) {
-            let expr = expect_template_expr(p)?;
-            p.expect_token(Token!(;))?;
-            (None, expr)
-        } else {
-            let type_expr = expect_type_expr(p)?;
-            p.expect_token(Token!(:))?;
-            let expr = expect_template_expr(p)?;
-            p.expect_token(Token!(;))?;
-            (Some(type_expr), expr)
-        }
-    } else {
-        p.expect_token(Token!(::))?;
-        let expr = expect_template_expr(p)?;
-        p.expect_token(Token!(;))?;
-        (None, expr)
-    };
-
-    Ok(emit_global_decl(p, proto, type_expr, init_expr))
+/// KEYWORD_defer BlockExprStatement
+fn expect_statement_defer(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let defer_token = p.expect_token(Token!(defer))?;
+    let block_expr_statement = expect_block_expr_statement(p)?;
+    Ok(p.push_node(defer_token, NodeData::Defer(block_expr_statement)))
 }
 
-/// ContainerDeclStatement <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_global_decl_statement2(p: &mut Parser<'_>, proto: DeclProtoPub) -> Result<NodeIndex, ()> {
-    let mut protos = vec![proto];
-    protos.push(expect_decl_proto_pub(p, None, false)?);
-    while p.peek(Token!(,)) {
-        p.next();
-        protos.push(expect_decl_proto_pub(p, None, false)?);
-    }
-
-    let (type_expr, init_expr, semicolon_token) = if p.eat_token(Token!(:)) {
-        if p.eat_token(Token!(:)) {
-            let expr = expect_template_expr(p)?;
-            let semicolon_token = p.expect_token(Token!(;))?;
-            (None, expr, semicolon_token)
-        } else {
-            let type_expr = expect_type_expr(p)?;
-            p.expect_token(Token!(:))?;
-            let expr = expect_template_expr(p)?;
-            let semicolon_token = p.expect_token(Token!(;))?;
-            (Some(type_expr), expr, semicolon_token)
-        }
-    } else {
-        p.expect_token(Token!(::))?;
-        let expr = expect_template_expr(p)?;
-        let semicolon_token = p.expect_token(Token!(;))?;
-        (None, expr, semicolon_token)
-    };
-
-    let protos = p.push_packed_list(&protos).unwrap();
-    let protos = p.push_packed(protos);
-    let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
-    Ok(p.push_node(
-        semicolon_token,
-        NodeData::GlobalDeclDestructure(protos, type_init_expr),
-    ))
+/// KEYWORD_cont_defer BlockExprStatement
+fn expect_statement_cont_defer(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let defer_token = p.expect_token(Token!(cont_defer))?;
+    let block_expr_statement = expect_block_expr_statement(p)?;
+    Ok(p.push_node(defer_token, NodeData::Defer(block_expr_statement)))
 }
 
-/// StructField <- OuterAttribute* KEYWORD_inline? IDENTIFIER ByteAlign? COLON (TypeExpr / TypeExpr? EQUAL TemplateExpr) COMMA?
-fn expect_inlined_struct_field(p: &mut Parser<'_>, attrs: Vec<NodeIndex>) -> Result<NodeIndex, ()> {
-    p.expect_token(Token!(inline))?;
-    let ident_token = p.expect_token(Token!(#<identifier>))?;
-    let align_expr: Option<NodeIndex> = if p.peek(Token!(align)) {
-        p.next();
-        p.expect_token(Token!('('))?;
-        let expr = expect_expr(p)?;
-        p.expect_token(Token!(')'))?;
-        Some(expr)
-    } else {
-        None
-    };
-    p.expect_token(Token!(:))?;
+/// KEYWORD_err_defer BlockExprStatement
+fn expect_statement_err_defer(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let defer_token = p.expect_token(Token!(err_defer))?;
+    let block_expr_statement = expect_block_expr_statement(p)?;
+    Ok(p.push_node(defer_token, NodeData::Defer(block_expr_statement)))
+}
 
+/// BlockExprStatement
+///    <- BlockExpr
+///     / AssignExpr SEMICOLON
+fn expect_block_expr_statement(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    match p.tag() {
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!('{')) => {
+            let label = p.next();
+            p.next();
+            let block = expect_block(p)?;
+            Ok(p.push_node(label, NodeData::Label(block)))
+        }
+        Token!('{') => expect_block(p),
+        _ => expect_statement_expr(p),
+    }
+}
+
+fn expect_statement_if(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    todo!()
+}
+
+fn expect_statement_for(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    todo!()
+}
+
+fn expect_statement_while(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    todo!()
+}
+
+/// GlobalDeclStatementThreadLocal <- KEYWORD_thread_local LocalDeclStatement
+/// LocalDeclStatement <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+fn expect_statement_global_decl_thread_local(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    _ = p.expect_token(Token!(thread_local))?;
+    let mut prototypes = vec![expect_decl_proto(p)?];
+    while p.eat_token(Token!(,)) {
+        prototypes.push(expect_decl_proto(p)?);
+    }
+    _ = p.expect_token(Token!(:))?;
     let type_expr = if !p.peek(Token!(=)) {
         Some(expect_type_expr(p)?)
     } else {
         None
     };
-    let init_expr = if p.eat_token(Token!(=)) {
-        Some(expect_template_expr(p)?)
-    } else {
-        None
-    };
-    let has_comma = p.eat_token(Token!(,));
+    _ = p.expect_token(Token!(=))?;
 
-    Ok(emit_container_field_inline(
-        p,
-        ident_token,
-        attrs,
-        align_expr,
+    let mut init_exprs = vec![expect_expr(p)?];
+    while p.eat_token(Token!(,)) {
+        init_exprs.push(expect_expr(p)?);
+    }
+
+    let semicolon_token = p.expect_token(Token!(;))?;
+
+    let prototypes = p.push_packed_list(&prototypes).unwrap();
+    let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+    let init_exprs = p.push_packed(init_exprs);
+    let decl_list = p.push_packed(DeclList {
+        decl_type: DeclType::ThreadLocal,
+        prototypes,
         type_expr,
-        init_expr,
-        has_comma,
-    ))
+    });
+    Ok(p.push_node(semicolon_token, NodeData::Decl(decl_list, init_exprs)))
 }
 
-/// StructField / ContainerDeclStatement
-/// StructField <- OuterAttribute* KEYWORD_inline? IDENTIFIER ByteAlign? COLON (TypeExpr / TypeExpr? EQUAL TemplateExpr) COMMA?
-/// ContainerDeclStatement <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_struct_field_or_global_container_decl_statement(
-    p: &mut Parser<'_>,
-    attrs: Vec<NodeIndex>,
-) -> Result<NodeIndex, ()> {
-    let ident_token = p.expect_token(Token!(#<identifier>))?;
-    let align_expr: Option<NodeIndex> = if p.peek(Token!(align)) {
-        p.next();
-        p.expect_token(Token!('('))?;
-        let expr = expect_expr(p)?;
-        p.expect_token(Token!(')'))?;
-        Some(expr)
+/// GlobalDeclStatementStatic <- KEYWORD_static LocalDeclStatement
+/// LocalDeclStatement <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+fn expect_statement_global_decl_static(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    _ = p.expect_token(Token!(static))?;
+    let mut prototypes = vec![expect_decl_proto(p)?];
+    while p.eat_token(Token!(,)) {
+        prototypes.push(expect_decl_proto(p)?);
+    }
+    _ = p.expect_token(Token!(:))?;
+    let type_expr = if !p.peek(Token!(=)) {
+        Some(expect_type_expr(p)?)
     } else {
         None
     };
+    _ = p.expect_token(Token!(=))?;
 
+    let mut init_exprs = vec![expect_expr(p)?];
+    while p.eat_token(Token!(,)) {
+        init_exprs.push(expect_expr(p)?);
+    }
+
+    let semicolon_token = p.expect_token(Token!(;))?;
+
+    let prototypes = p.push_packed_list(&prototypes).unwrap();
+    let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+    let init_exprs = p.push_packed(init_exprs);
+    let decl_list = p.push_packed(DeclList {
+        decl_type: DeclType::Static,
+        prototypes,
+        type_expr,
+    });
+    Ok(p.push_node(semicolon_token, NodeData::Decl(decl_list, init_exprs)))
+}
+
+/// ConstDeclStatement <- DeclProto (COMMA DeclProto)* (COLON TypeExpr? COLON / COLON2) Expr (COMMA Expr)*
+/// LocalDeclStatement <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+fn parse_ambiguous_statement_const_or_global_decl(
+    p: &mut Parser<'_>,
+) -> Result<Option<NodeIndex>, ()> {
+    let mut prototypes = vec![];
+    match expect_decl_proto(p) {
+        Ok(proto) => prototypes.push(proto),
+        Err(_) => return Ok(None),
+    }
+    while p.eat_token(Token!(,)) {
+        match expect_decl_proto(p) {
+            Ok(proto) => prototypes.push(proto),
+            Err(_) => return Ok(None),
+        }
+    }
+
+    // If we see `:{` or `::[`, we know that we must be parsing an expression and not a declaration.
     match p.tag() {
-        // a align(expr) : ...
-        Token!(:) => {
+        Token!(:) if !p.peek2(Token!('{')) => {
             p.next();
-            match p.tag() {
-                // a align(expr) := generic_expr
-                Token!(=) => {
-                    p.next();
-                    let init_expr = expect_template_expr(p)?;
-                    let has_comma = match p.tag() {
-                        Token!('}') | Token!(#<eof>) => false,
-                        _ => {
-                            p.expect_token(Token!(,))?;
-                            true
-                        }
-                    };
-                    Ok(emit_container_field(
-                        p,
-                        ident_token,
-                        attrs,
-                        align_expr,
-                        None,
-                        Some(init_expr),
-                        has_comma,
-                    ))
-                }
-                // a align(expr) : : generic_expr;
+            let type_expr = if !p.peek_any([Token!(:), Token!(=)]) {
+                Some(expect_type_expr(p)?)
+            } else {
+                None
+            };
+
+            let decl_type = match p.tag() {
                 Token!(:) => {
                     p.next();
-                    let init_expr = expect_template_expr(p)?;
-                    p.expect_token(Token!(;))?;
-
-                    let attrs = p.push_packed_list(&attrs);
-                    let proto = DeclProtoPub {
-                        attrs,
-                        is_pub: false,
-                        is_var: false,
-                        ident: ident_token,
-                        align_expr,
-                    };
-                    Ok(emit_global_decl(p, proto, None, init_expr))
+                    DeclType::Const
                 }
-                // a align(expr) : type_expr ...
+                Token!(=) => {
+                    p.next();
+                    DeclType::Normal
+                }
                 _ => {
-                    let type_expr = expect_type_expr(p)?;
-                    match p.tag() {
-                        // a align(expr) : type_expr
-                        Token!('}') | Token!(#<eof>) => Ok(emit_container_field(
-                            p,
-                            ident_token,
-                            attrs,
-                            align_expr,
-                            Some(type_expr),
-                            None,
-                            false,
-                        )),
-                        // a align(expr) : type_expr,
-                        Token!(,) => {
-                            p.next();
-                            Ok(emit_container_field(
-                                p,
-                                ident_token,
-                                attrs,
-                                align_expr,
-                                Some(type_expr),
-                                None,
-                                true,
-                            ))
-                        }
-                        // a align(expr) : type_expr = generic_expr
-                        Token!(=) => {
-                            p.next();
-                            let expr_idx = expect_template_expr(p)?;
-
-                            let has_comma = match p.tag() {
-                                Token!('}') | Token!(#<eof>) => false,
-                                _ => {
-                                    p.expect_token(Token!(,))?;
-                                    true
-                                }
-                            };
-                            Ok(emit_container_field(
-                                p,
-                                ident_token,
-                                attrs,
-                                align_expr,
-                                Some(type_expr),
-                                Some(expr_idx),
-                                has_comma,
-                            ))
-                        }
-                        _ => {
-                            p.expect_token(Token!(:))?;
-                            let init_expr = expect_template_expr(p)?;
-                            p.expect_token(Token!(;))?;
-
-                            let attrs = p.push_packed_list(&attrs);
-                            let proto = DeclProtoPub {
-                                attrs,
-                                is_pub: false,
-                                is_var: false,
-                                ident: ident_token,
-                                align_expr,
-                            };
-                            Ok(emit_global_decl(p, proto, Some(type_expr), init_expr))
-                        }
-                    }
+                    p.fail(ErrorData::ExpectedInitExpression)?;
+                    unreachable!()
                 }
+            };
+
+            let mut init_exprs = vec![expect_expr(p)?];
+            while p.eat_token(Token!(,)) {
+                init_exprs.push(expect_expr(p)?);
             }
+            let semicolon_token = p.expect_token(Token!(;))?;
+
+            let prototypes = p.push_packed_list(&prototypes).unwrap();
+            let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+            let init_exprs = p.push_packed(init_exprs);
+            let decl_list = p.push_packed(DeclList {
+                decl_type,
+                prototypes,
+                type_expr,
+            });
+            Ok(Some(p.push_node(
+                semicolon_token,
+                NodeData::Decl(decl_list, init_exprs),
+            )))
         }
-        // a align(expr) :: generic_expr;
+        Token!(::) if !p.peek2(Token!('[')) => {
+            p.next();
+            let mut init_exprs = vec![expect_expr(p)?];
+            while p.eat_token(Token!(,)) {
+                init_exprs.push(expect_expr(p)?);
+            }
+            let semicolon_token = p.expect_token(Token!(;))?;
+
+            let prototypes = p.push_packed_list(&prototypes).unwrap();
+            let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+            let init_exprs = p.push_packed(init_exprs);
+            let decl_list = p.push_packed(DeclList {
+                decl_type: DeclType::Const,
+                prototypes,
+                type_expr: None,
+            });
+            Ok(Some(p.push_node(
+                semicolon_token,
+                NodeData::Decl(decl_list, init_exprs),
+            )))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// ConstDeclStatement <- DeclProto (COMMA DeclProto)* (COLON TypeExpr? COLON / COLON2) Expr (COMMA Expr)*
+/// LocalDeclStatement <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+fn expect_statement_const_or_global_decl(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let mut prototypes = vec![expect_decl_proto(p)?];
+    while p.eat_token(Token!(,)) {
+        prototypes.push(expect_decl_proto(p)?);
+    }
+
+    match p.tag() {
+        Token!(:) => {
+            p.next();
+            let type_expr = if !p.peek_any([Token!(:), Token!(=)]) {
+                Some(expect_type_expr(p)?)
+            } else {
+                None
+            };
+
+            let decl_type = match p.tag() {
+                Token!(:) => {
+                    p.next();
+                    DeclType::Const
+                }
+                Token!(=) => {
+                    p.next();
+                    DeclType::Normal
+                }
+                _ => {
+                    p.fail(ErrorData::ExpectedInitExpression)?;
+                    unreachable!()
+                }
+            };
+
+            let mut init_exprs = vec![expect_expr(p)?];
+            while p.eat_token(Token!(,)) {
+                init_exprs.push(expect_expr(p)?);
+            }
+            let semicolon_token = p.expect_token(Token!(;))?;
+
+            let prototypes = p.push_packed_list(&prototypes).unwrap();
+            let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+            let init_exprs = p.push_packed(init_exprs);
+            let decl_list = p.push_packed(DeclList {
+                decl_type,
+                prototypes,
+                type_expr,
+            });
+            Ok(p.push_node(semicolon_token, NodeData::Decl(decl_list, init_exprs)))
+        }
         Token!(::) => {
             p.next();
-            let init_expr = expect_template_expr(p)?;
-            p.expect_token(Token!(;))?;
-
-            let attrs = p.push_packed_list(&attrs);
-            let proto = DeclProtoPub {
-                attrs,
-                is_pub: false,
-                is_var: false,
-                ident: ident_token,
-                align_expr,
-            };
-            Ok(emit_global_decl(p, proto, None, init_expr))
-        }
-        // a align(expr), ...
-        Token!(,) => {
-            p.next();
-            if !p.peek_any([Token!(#), Token!(pub), Token!(var), Token!(#<identifier>)]) {
-                p.fail(ErrorData::StructFieldWithoutTypeOrInitExpr)?;
-                unreachable!()
+            let mut init_exprs = vec![expect_expr(p)?];
+            while p.eat_token(Token!(,)) {
+                init_exprs.push(expect_expr(p)?);
             }
+            let semicolon_token = p.expect_token(Token!(;))?;
 
-            let attrs = p.push_packed_list(&attrs);
-            let proto = DeclProtoPub {
-                attrs,
-                is_pub: false,
-                is_var: false,
-                ident: ident_token,
-                align_expr,
-            };
-            expect_global_decl_statement2(p, proto)
+            let prototypes = p.push_packed_list(&prototypes).unwrap();
+            let init_exprs = p.push_packed_list(&init_exprs).unwrap();
+            let init_exprs = p.push_packed(init_exprs);
+            let decl_list = p.push_packed(DeclList {
+                decl_type: DeclType::Const,
+                prototypes,
+                type_expr: None,
+            });
+            Ok(p.push_node(semicolon_token, NodeData::Decl(decl_list, init_exprs)))
         }
         _ => {
-            p.fail(ErrorData::ExpectedTypeExprOrInit)?;
+            p.fail(ErrorData::ExpectedInitExpression)?;
             unreachable!()
         }
     }
 }
 
-fn emit_global_decl(
-    p: &mut Parser<'_>,
-    proto: DeclProtoPub,
-    type_expr: Option<NodeIndex>,
-    init_expr: NodeIndex,
-) -> NodeIndex {
-    let proto @ DeclProtoPub {
-        attrs,
-        is_pub,
-        is_var,
-        ident,
-        align_expr,
-    } = proto;
-    if attrs.is_some() || is_pub || is_var || (align_expr.is_some() && type_expr.is_some()) {
-        let proto = p.push_packed(proto);
-        let type_init_expr = p.push_packed(PackedPair(type_expr, init_expr));
-        p.push_node(ident, NodeData::GlobalDecl(proto, type_init_expr))
-    } else if let Some(align_expr) = align_expr {
-        p.push_node(ident, NodeData::GlobalDeclAlign(align_expr, init_expr))
-    } else {
-        p.push_node(ident, NodeData::GlobalDeclTypeInit(type_expr, init_expr))
+/// ConstDeclStatement <- DeclProto (COMMA DeclProto)* (COLON TypeExpr? COLON / COLON2) Expr (COMMA Expr)*
+/// LocalDeclStatement <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+/// ExprStatement <- AssignExpr SEMICOLON
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+/// AssignExpr <- Expr (AssignOp Expr / (COMMA Expr)+ EQUAL Expr (COMMA Expr)*)?
+fn expect_statement_decl_or_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    debug_assert!(
+        p.peek(Token!(#<identifier>)),
+        "expected a declaration or expression statement"
+    );
+
+    let snapshot = p.snapshot();
+    if let Some(idx) = parse_ambiguous_statement_const_or_global_decl(p)? {
+        return Ok(idx);
     }
+
+    p.rollback(snapshot);
+    expect_statement_expr(p)
 }
 
-fn emit_container_field(
-    p: &mut Parser<'_>,
-    ident: TokenIndex,
-    attrs: Vec<NodeIndex>,
-    align_expr: Option<NodeIndex>,
-    type_expr: Option<NodeIndex>,
-    init_expr: Option<NodeIndex>,
-    has_comma: bool,
-) -> NodeIndex {
-    let attrs = p.push_packed_list(&attrs);
-
-    if let Some(attrs) = attrs {
-        let extra_idx = p.push_packed(StructFieldProto {
-            attrs: Some(attrs),
-            align_expr,
-            type_expr,
-            init_expr,
-        });
-        if has_comma {
-            p.push_node(ident, NodeData::ContainerFieldComma(extra_idx))
-        } else {
-            p.push_node(ident, NodeData::ContainerField(extra_idx))
-        }
-    } else if init_expr.is_none() {
-        let type_expr = type_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldTypeComma(align_expr, type_expr),
-            )
-        } else {
-            p.push_node(ident, NodeData::ContainerFieldType(align_expr, type_expr))
-        }
-    } else if type_expr.is_none() {
-        #[allow(clippy::unnecessary_unwrap)]
-        let init_expr = init_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInitComma(align_expr, init_expr),
-            )
-        } else {
-            p.push_node(ident, NodeData::ContainerFieldInit(align_expr, init_expr))
-        }
-    } else if align_expr.is_none() {
-        let type_expr = type_expr.unwrap();
-        #[allow(clippy::unnecessary_unwrap)]
-        let init_expr = init_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldTypeInitComma(type_expr, init_expr),
-            )
-        } else {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldTypeInit(type_expr, init_expr),
-            )
-        }
-    } else {
-        let extra_idx = p.push_packed(StructFieldProto {
-            attrs: None,
-            align_expr,
-            type_expr,
-            init_expr,
-        });
-        if has_comma {
-            p.push_node(ident, NodeData::ContainerFieldComma(extra_idx))
-        } else {
-            p.push_node(ident, NodeData::ContainerField(extra_idx))
-        }
-    }
+/// ExprStatement <- AssignExpr SEMICOLON
+fn expect_statement_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let expr = expect_assign_expr(p)?;
+    let semicolon_token = p.expect_token(Token!(;))?;
+    Ok(p.push_node(semicolon_token, NodeData::ExprSemicolon(expr)))
 }
 
-fn emit_container_field_inline(
-    p: &mut Parser<'_>,
-    ident: TokenIndex,
-    attrs: Vec<NodeIndex>,
-    align_expr: Option<NodeIndex>,
-    type_expr: Option<NodeIndex>,
-    init_expr: Option<NodeIndex>,
-    has_comma: bool,
-) -> NodeIndex {
-    let attrs = p.push_packed_list(&attrs);
-    if let Some(attrs) = attrs {
-        let extra_idx = p.push_packed(StructFieldProto {
-            attrs: Some(attrs),
-            align_expr,
-            type_expr,
-            init_expr,
-        });
-        if has_comma {
-            p.push_node(ident, NodeData::ContainerFieldInlineComma(extra_idx))
-        } else {
-            p.push_node(ident, NodeData::ContainerFieldInline(extra_idx))
-        }
-    } else if init_expr.is_none() {
-        let type_expr = type_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineTypeComma(align_expr, type_expr),
-            )
-        } else {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineType(align_expr, type_expr),
-            )
-        }
-    } else if type_expr.is_none() {
-        #[allow(clippy::unnecessary_unwrap)]
-        let init_expr = init_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineInitComma(align_expr, init_expr),
-            )
-        } else {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineInit(align_expr, init_expr),
-            )
-        }
-    } else if align_expr.is_none() {
-        let type_expr = type_expr.unwrap();
-        #[allow(clippy::unnecessary_unwrap)]
-        let init_expr = init_expr.unwrap();
-        if has_comma {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineTypeInitComma(type_expr, init_expr),
-            )
-        } else {
-            p.push_node(
-                ident,
-                NodeData::ContainerFieldInlineTypeInit(type_expr, init_expr),
-            )
-        }
-    } else {
-        let extra_idx = p.push_packed(StructFieldProto {
-            attrs: None,
-            align_expr,
-            type_expr,
-            init_expr,
-        });
-        if has_comma {
-            p.push_node(ident, NodeData::ContainerFieldInlineComma(extra_idx))
-        } else {
-            p.push_node(ident, NodeData::ContainerFieldInline(extra_idx))
-        }
-    }
-}
-
-/// DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
-fn expect_decl_proto_pub(
-    p: &mut Parser<'_>,
-    attrs: Option<Vec<NodeIndex>>,
-    is_first: bool,
-) -> Result<DeclProtoPub, ()> {
-    let mut attrs = attrs.unwrap_or_default();
-    loop {
-        let (attr, has_doc_comment) = parse_outer_attribute(p)?;
-        if has_doc_comment && !is_first {
-            p.fail(ErrorData::DocCommentBetweenDeclProtos)?;
-            unreachable!();
-        }
-        if let Some(attr) = attr {
-            attrs.push(attr);
-        } else {
-            break;
+/// DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAttribute*
+fn expect_decl_proto(p: &mut Parser<'_>) -> Result<DeclProto, ()> {
+    let is_pub = p.eat_token(Token!(pub));
+    let mut is_var = false;
+    let mut is_inline = false;
+    while !p.peek(Token!(#<identifier>)) {
+        match p.tag() {
+            Token!(pub) => {
+                p.fail(ErrorData::PubTokenOutOfOrder)?;
+            }
+            Token!(var) => {
+                if is_var {
+                    p.fail(ErrorData::DoubleVarToken)?;
+                }
+                is_var = true;
+                p.next();
+            }
+            Token!(inline) => {
+                if is_inline {
+                    p.fail(ErrorData::DoubleInlineToken)?;
+                }
+                is_inline = true;
+                p.next();
+            }
+            _ => _ = p.fail(ErrorData::ExpectedVarInlineOrIdent)?,
         }
     }
 
-    let mut pub_token = p.take_token(Token!(pub));
-    let var_token = p.take_token(Token!(var));
-    if p.peek(Token!(pub)) {
-        if pub_token.is_some() {
-            p.fail(ErrorData::DoublePubToken)?;
-            unreachable!();
-        } else {
-            p.warn(ErrorData::PubTokenAfterVarToken);
-            pub_token = Some(p.next());
-        }
-    } else if p.peek(Token!(var)) {
-        assert!(var_token.is_some());
-        p.fail(ErrorData::DoubleVarToken)?;
-        unreachable!();
-    }
-    let ident_token = p.expect_token(Token!(#<identifier>))?;
+    let ident = p.next();
     let align_expr = if p.eat_token(Token!(align)) {
         p.expect_token(Token!('('))?;
         let expr = expect_expr(p)?;
@@ -4825,52 +4656,21 @@ fn expect_decl_proto_pub(
     } else {
         None
     };
-    let attrs = p.push_packed_list(&attrs);
 
-    Ok(DeclProtoPub {
-        attrs,
-        is_pub: pub_token.is_some(),
-        is_var: var_token.is_some(),
-        ident: ident_token,
+    let mut annotations = vec![];
+    while p.peek(Token!(#)) {
+        annotations.push(expect_outer_annotation(p)?);
+    }
+    let annotations = p.push_packed_list(&annotations);
+
+    Ok(DeclProto {
+        is_pub,
+        is_var,
+        is_inline,
+        ident,
         align_expr,
+        annotations,
     })
-}
-
-/// ImplBlockStatement <- OuterAttribute* KEYWORD_impl Expr DeclBlock
-fn expect_impl_block_statement(
-    p: &mut Parser<'_>,
-    attrs: Option<Vec<NodeIndex>>,
-) -> Result<NodeIndex, ()> {
-    let mut warned = false;
-    let mut attrs = attrs.unwrap_or_default();
-    loop {
-        let (attr, has_doc_comment) = parse_outer_attribute(p)?;
-        if has_doc_comment && !warned {
-            warned = true;
-            p.warn(ErrorData::DocCommentOnStatement);
-        }
-        if let Some(attr) = attr {
-            attrs.push(attr);
-        } else {
-            break;
-        }
-    }
-
-    let impl_token = p.expect_token(Token!(impl))?;
-    let cond_expr = expect_expr(p)?;
-    let decl_block = expect_decl_block(p)?;
-
-    if let Some(attrs) = p.push_packed_list(&attrs) {
-        let impl_block = ImplBlock {
-            attrs,
-            cond_expr,
-            decl_block,
-        };
-        let impl_block = p.push_packed(impl_block);
-        Ok(p.push_node(impl_token, NodeData::ImplBlockAttrs(impl_block)))
-    } else {
-        Ok(p.push_node(impl_token, NodeData::ImplBlock(cond_expr, decl_block)))
-    }
 }
 
 // Attributes
@@ -4942,36 +4742,79 @@ fn parse_inner_annotation(p: &mut Parser<'_>) -> Result<Option<NodeIndex>, ()> {
     ))
 }
 
-/// OuterAttribute <- OuterDocComment \ OuterAnnotation
-fn parse_outer_attribute(p: &mut Parser<'_>) -> Result<(Option<NodeIndex>, bool), ()> {
-    let mut skipped = false;
+/// OuterDocComment
+fn parse_outer_doc_commens(p: &mut Parser<'_>) -> bool {
+    let mut has_doc_comments = false;
     while p.eat_token(Token!(#<outer_doc_comment>)) {
-        skipped = true;
+        has_doc_comments = true;
     }
-    parse_outer_annotation(p).map(|idx| (idx, skipped))
+    has_doc_comments
 }
 
 /// OuterAnnotation <- #[=Expr]
-fn parse_outer_annotation(p: &mut Parser<'_>) -> Result<Option<NodeIndex>, ()> {
-    if !(p.peek(Token!(#)) && p.peek2(Token!('[')) && p.peek3(Token!(=))) {
-        return Ok(None);
-    }
-
-    let start = p.next();
-    p.next();
-    p.next();
+fn expect_outer_annotation(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let pound_token = p.expect_token(Token!(#))?;
+    _ = p.expect_token(Token!('['))?;
+    _ = p.expect_token(Token!(=))?;
     let expr = expect_expr(p)?;
-    let end = p.expect_token(Token!(']'))?;
+    let rbracket_token = p.expect_token(Token!(']'))?;
 
-    Ok(Some(
-        p.push_node(start, NodeData::OuterAnnotation(expr, end)),
-    ))
+    Ok(p.push_node(pound_token, NodeData::OuterAnnotation(expr, rbracket_token)))
 }
 
 // Expressions
 
-/// TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? Expr
-fn expect_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+/// AssignExpr <- Expr (AssignOp Expr / (COMMA Expr)+ EQUAL Expr (COMMA Expr)*)?
+fn expect_assign_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let expr = expect_expr(p)?;
+    match p.tag() {
+        Token!(*=)
+        | Token!(*|=)
+        | Token!(/=)
+        | Token!(%=)
+        | Token!(+=)
+        | Token!(+|=)
+        | Token!(-=)
+        | Token!(-|=)
+        | Token!(<<=)
+        | Token!(<<|=)
+        | Token!(>>=)
+        | Token!(&=)
+        | Token!(^=)
+        | Token!(|=)
+        | Token!(*%=)
+        | Token!(+%=)
+        | Token!(-%=)
+        | Token!(=) => {
+            let assign_token = p.next();
+            let rhs = expect_expr(p)?;
+            Ok(p.push_node(assign_token, NodeData::Binary(expr, rhs)))
+        }
+        Token!(,) => {
+            let mut lhs = vec![expr];
+            while p.eat_token(Token!(,)) {
+                lhs.push(expect_expr(p)?);
+            }
+
+            let eq_token = p.expect_token(Token!(=))?;
+            let mut rhs = vec![expect_expr(p)?];
+            while p.eat_token(Token!(,)) {
+                rhs.push(expect_expr(p)?);
+            }
+            todo!()
+        }
+        _ => Ok(expr),
+    }
+}
+
+/// Expr <- TemplateExpr
+fn expect_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    parse_template_expr(p)
+}
+
+/// TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? RangeExpr
+fn parse_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let snapshot = p.snapshot();
     if let Some(with_token) = p.take_token(Token!(with)) {
         p.expect_token(Token!('['))?;
         match p.tag() {
@@ -5023,7 +4866,7 @@ fn expect_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 } else {
                     None
                 };
-                let expr = expect_expr(p)?;
+                let expr = parse_range_expr(p)?;
 
                 let args = p.push_packed_list(&args).unwrap();
                 let proto = p.push_packed(TemplateExprProto { args, where_expr });
@@ -5035,18 +4878,13 @@ fn expect_template_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             }
             // Template type expressions
             _ => {
-                p.rollback(2);
+                p.rollback(snapshot);
                 expect_template_type_expr(p)
             }
         }
     } else {
-        expect_expr(p)
+        parse_range_expr(p)
     }
-}
-
-/// Expr <- RangeExpr
-fn expect_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    parse_range_expr(p)
 }
 
 /// RangeExpr <- BoolOrExpr (DOT2 BoolOrExpr? / DOT2EQUAL BoolOrExpr) / (DOT2 / DOT2EQUAL) BoolOrExpr
@@ -5090,7 +4928,7 @@ fn parse_range_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 | Token!('(')
                 | Token!(#<core_identifier>)
                 | Token!(#<builtin_identifier>)
-                | Token!(impl)
+                | Token!(where)
                 | Token!(Self)
                 | Token!(self)
                 | Token!(unreachable)
@@ -5227,7 +5065,7 @@ fn parse_multiply_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 ///     / KEYWORD_throw Expr?
 ///     / BlockLabel? LoopExpr / FnExpr
 ///     / FnExpr
-///     / ExprBlock
+///     / Block
 ///     / CurlySuffixExpr
 fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     match p.tag() {
@@ -5243,7 +5081,24 @@ fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         Token!(continue) => expect_continue_expr(p),
         Token!(return) => expect_return_expr(p),
         Token!(throw) => expect_throw_expr(p),
-        Token!(#<identifier>) if p.peek2(Token!(:)) => todo!("BlockLabel? LoopExpr / TryExpr"),
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(for)) => {
+            let tok = p.next();
+            p.next();
+            let while_expr = expect_for_expr(p)?;
+            Ok(p.push_node(tok, NodeData::Label(while_expr)))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(while)) => {
+            let tok = p.next();
+            p.next();
+            let while_expr = expect_while_expr(p)?;
+            Ok(p.push_node(tok, NodeData::Label(while_expr)))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(try)) => {
+            let tok = p.next();
+            p.next();
+            let try_expr = expect_try_expr(p)?;
+            Ok(p.push_node(tok, NodeData::Label(try_expr)))
+        }
         Token!(for) => expect_for_expr(p),
         Token!(while) => expect_while_expr(p),
         Token!(try) => expect_try_expr(p),
@@ -5253,11 +5108,7 @@ fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             Ok(p.push_node(tok, NodeData::TokenInit(init_list)))
         }
         Token!(fn) => expect_fn_expr(p),
-        Token!('{') => expect_expr_block(p, false),
-        Token!(#) if !p.peek2(Token!('(')) => {
-            p.fail(ErrorData::AttributeOnExpression)?;
-            unreachable!();
-        }
+        Token!('{') => expect_block(p),
         Token!(?)
         | Token!('[')
         | Token!(*)
@@ -5268,7 +5119,7 @@ fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(#<identifier>)
         | Token!(#<core_identifier>)
         | Token!(#<builtin_identifier>)
-        | Token!(impl)
+        | Token!(where)
         | Token!(Self)
         | Token!(self)
         | Token!(unreachable)
@@ -5402,7 +5253,7 @@ fn expect_if_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     todo!("if")
 }
 
-/// KEYWORD_break BreakLabel? TemplateExpr?
+/// KEYWORD_break BreakLabel? Expr?
 fn expect_break_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let break_token = p.expect_token(Token!(break))?;
     let label_token = if p.peek(Token!(:)) && p.peek2(Token!(#<identifier>)) {
@@ -5438,7 +5289,7 @@ fn expect_break_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!('(')
         | Token!(#<core_identifier>)
         | Token!(#<builtin_identifier>)
-        | Token!(impl)
+        | Token!(where)
         | Token!(Self)
         | Token!(self)
         | Token!(unreachable)
@@ -5454,7 +5305,7 @@ fn expect_break_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(struct)
         | Token!(union)
         | Token!(#primitive)
-        | Token!(with) => Some(expect_template_expr(p)?),
+        | Token!(with) => Some(expect_expr(p)?),
         _ => None,
     };
 
@@ -5464,11 +5315,11 @@ fn expect_break_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 /// KEYWORD_const Expr
 fn expect_const_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let const_token = p.expect_token(Token!(const))?;
-    let expr = expect_template_expr(p)?;
+    let expr = expect_expr(p)?;
     Ok(p.push_node(const_token, NodeData::Const(expr)))
 }
 
-/// KEYWORD_continue BreakLabel? TemplateExpr?
+/// KEYWORD_continue BreakLabel? Expr?
 fn expect_continue_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let continue_token = p.expect_token(Token!(continue))?;
     let label_token = if p.peek(Token!(:)) && p.peek2(Token!(#<identifier>)) {
@@ -5504,7 +5355,7 @@ fn expect_continue_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!('(')
         | Token!(#<core_identifier>)
         | Token!(#<builtin_identifier>)
-        | Token!(impl)
+        | Token!(where)
         | Token!(Self)
         | Token!(self)
         | Token!(unreachable)
@@ -5520,14 +5371,14 @@ fn expect_continue_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(struct)
         | Token!(union)
         | Token!(#primitive)
-        | Token!(with) => Some(expect_template_expr(p)?),
+        | Token!(with) => Some(expect_expr(p)?),
         _ => None,
     };
 
     Ok(p.push_node(continue_token, NodeData::Jump(label_token, value_expr)))
 }
 
-/// KEYWORD_return TemplateExpr?
+/// KEYWORD_return Expr?
 fn expect_return_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let return_token = p.expect_token(Token!(return))?;
     let value_expr = match p.tag() {
@@ -5557,7 +5408,7 @@ fn expect_return_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!('(')
         | Token!(#<core_identifier>)
         | Token!(#<builtin_identifier>)
-        | Token!(impl)
+        | Token!(where)
         | Token!(Self)
         | Token!(self)
         | Token!(unreachable)
@@ -5573,14 +5424,14 @@ fn expect_return_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(struct)
         | Token!(union)
         | Token!(#primitive)
-        | Token!(with) => Some(expect_template_expr(p)?),
+        | Token!(with) => Some(expect_expr(p)?),
         _ => None,
     };
 
     Ok(p.push_node(return_token, NodeData::Jump(None, value_expr)))
 }
 
-/// KEYWORD_throw TemplateExpr?
+/// KEYWORD_throw Expr?
 fn expect_throw_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let throw_token = p.expect_token(Token!(throw))?;
     let value_expr = match p.tag() {
@@ -5610,7 +5461,7 @@ fn expect_throw_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!('(')
         | Token!(#<core_identifier>)
         | Token!(#<builtin_identifier>)
-        | Token!(impl)
+        | Token!(where)
         | Token!(Self)
         | Token!(self)
         | Token!(unreachable)
@@ -5626,25 +5477,96 @@ fn expect_throw_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         | Token!(struct)
         | Token!(union)
         | Token!(#primitive)
-        | Token!(with) => Some(expect_template_expr(p)?),
+        | Token!(with) => Some(expect_expr(p)?),
         _ => None,
     };
 
     Ok(p.push_node(throw_token, NodeData::Jump(None, value_expr)))
 }
 
+/// ForExpr <- ForPrefix Expr (KEYWORD_else Expr)?
+/// ForPrefix <- KEYWORD_for LPAREN ExprList RPAREN PtrListPayload KEYWORD_inline?
 fn expect_for_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    todo!("for")
+    let for_token = p.expect_token(Token!(for))?;
+    p.expect_token(Token!('('))?;
+
+    let mut iter_exprs = vec![];
+    while !p.eat_token(Token!(')')) {
+        iter_exprs.push(expect_expr(p)?);
+        if !p.eat_token(Token!(,)) {
+            p.expect_token(Token!(')'))?;
+            break;
+        }
+    }
+
+    let mut payloads = vec![];
+    p.expect_token(Token!(|))?;
+    while !p.eat_token(Token!(|)) {
+        let is_ptr = p.eat_token(Token!(*));
+        let ident = p.expect_token(Token!(#<identifier>))?;
+        let has_comma = p.eat_token(Token!(,));
+        payloads.push(p.push_node(ident, NodeData::Payload(is_ptr, has_comma)));
+        if !has_comma {
+            p.expect_token(Token!(|))?;
+            break;
+        }
+    }
+
+    let is_inline = p.eat_token(Token!(inline));
+    let expr = expect_expr(p)?;
+    let else_expr = if p.eat_token(Token!(else)) {
+        Some(expect_expr(p)?)
+    } else {
+        None
+    };
+
+    if iter_exprs.len() <= 2 && payloads.len() <= 2 {
+        let iter_expr1 = iter_exprs.first().copied();
+        let iter_expr2 = iter_exprs.get(1).copied();
+        let payload1 = payloads.first().copied();
+        let payload2 = payloads.get(1).copied();
+        let main_expr = p.push_packed(ForSimple {
+            iter_expr1,
+            iter_expr2,
+            payload1,
+            payload2,
+            expr,
+        });
+        if is_inline {
+            Ok(p.push_node(for_token, NodeData::ForSimpleInline(main_expr, else_expr)))
+        } else {
+            Ok(p.push_node(for_token, NodeData::ForSimple(main_expr, else_expr)))
+        }
+    } else {
+        let iter_exprs = p.push_packed_list(&iter_exprs);
+        let payloads = p.push_packed_list(&payloads);
+        let main_expr = p.push_packed(For {
+            iter_exprs,
+            payloads,
+            expr,
+        });
+        if is_inline {
+            Ok(p.push_node(for_token, NodeData::ForInline(main_expr, else_expr)))
+        } else {
+            Ok(p.push_node(for_token, NodeData::For(main_expr, else_expr)))
+        }
+    }
 }
 
+/// WhileExpr <- WhilePrefix Expr (KEYWORD_else Payload? Expr)?
+/// WhilePrefix <- KEYWORD_while LPAREN Expr RPAREN PtrPayload? KEYWORD_inline?
 fn expect_while_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     todo!("while")
 }
 
+/// TryExpr <- KEYWORD_try Block
 fn expect_try_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    todo!("try")
+    let try_token = p.expect_token(Token!(try))?;
+    let block = expect_block(p)?;
+    Ok(p.push_node(try_token, NodeData::TryBlock(block)))
 }
 
+/// FnExpr <- KEYWORD_fn FnCaptures? FnArgs FnModifier? FnCallConv? FnReturn? FnWhere? Block
 fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let fn_token = p.expect_token(Token!(fn))?;
 
@@ -5972,7 +5894,7 @@ fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             p.expect_token(Token!(:))?;
             let type_expr = expect_type_expr(p)?;
             let default_expr = if p.eat_token(Token!(=)) {
-                Some(expect_template_expr(p)?)
+                Some(expect_expr(p)?)
             } else {
                 None
             };
@@ -6042,7 +5964,7 @@ fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         None
     };
 
-    let expr_block = expect_expr_block(p, false)?;
+    let block = expect_block(p)?;
 
     let context = p.push_optional_packed(context);
     let captures = p.push_packed_list(&captures);
@@ -6060,7 +5982,7 @@ fn expect_fn_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         return_type_expr,
         where_expr,
     });
-    Ok(p.push_node(fn_token, NodeData::Fn(proto, expr_block)))
+    Ok(p.push_node(fn_token, NodeData::Fn(proto, block)))
 }
 
 fn expect_curly_suffix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
@@ -6107,8 +6029,8 @@ fn expect_pack_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 /// SingleTypeExpr <- PrefixTypeOp* PrimaryTypeExpr (SuffixOp / MacroCallArguments / FnCallArguments)*
 /// PrefixTypeOp
 ///    <- QUESTIONMARK
-///     / SliceTypeStart (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
-///     / PtrTypeStart (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
+///     / SliceTypeStart
+///     / PtrTypeStart (ByteAlign / QUESTIONMARK? KEYWORD_var / QUESTIONMARK? KEYWORD_volatile)*
 ///     / VectorTypeStart
 ///     / MatrixTypeStart
 ///     / ArrayTypeStart
@@ -6122,7 +6044,7 @@ fn expect_pack_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 ///     / CORE_IDENTIFIER
 ///     / BUILTIN_IDENTIFIER
 ///     / KEYWORD_const TypeExpr
-///     / KEYWORD_impl TypeExpr
+///     / KEYWORD_where TypeExpr
 ///     / KEYWORD_Self
 ///     / KEYWORD_self
 ///     / KEYWORD_unreachable
@@ -6221,12 +6143,25 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             let init_list = expect_init_list(p)?;
             p.push_node(tok, NodeData::TokenInit(init_list))
         }
-        Token!(#<identifier>) if p.peek2(Token!(:)) => {
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!('{')) => {
+            let tok = p.next();
+            p.next();
+            let block = expect_block(p)?;
+            p.push_node(tok, NodeData::Label(block))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(for)) => {
+            let tok = p.next();
+            p.next();
+            let for_expr = expect_for_type_expr(p)?;
+            p.push_node(tok, NodeData::Label(for_expr))
+        }
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(while)) => {
             todo!("LabeledTypeExpr")
         }
-        Token!(for) => {
-            todo!("for")
+        Token!(#<identifier>) if p.peek2(Token!(:)) && p.peek3(Token!(switch)) => {
+            todo!("LabeledTypeExpr")
         }
+        Token!(for) => expect_for_type_expr(p)?,
         Token!(while) => {
             todo!("while")
         }
@@ -6256,10 +6191,10 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             let expr = expect_type_expr(p)?;
             p.push_node(const_token, NodeData::Const(expr))
         }
-        Token!(impl) => {
+        Token!(where) => {
             let tok = p.next();
             let expr = expect_type_expr(p)?;
-            p.push_node(tok, NodeData::ImplExpr(expr))
+            p.push_node(tok, NodeData::WhereExpr(expr))
         }
         Token!(Self) => {
             let tok = p.next();
@@ -6318,7 +6253,7 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 /// SingleTypeExpr <- PrefixTypeOp* PrimaryTypeExpr (SuffixOp / MacroCallArguments / FnCallArguments)*
 /// SuffixOp
 ///    <- LBRACKET Expr RBRACKET
-///     / DOT2 LBRACKET (TemplateExprList / DOT3) RBRACKET
+///     / DOT2 LBRACKET (ExprList / DOT3) RBRACKET
 ///     / DOT IDENTIFIER
 ///     / MINUSARROW IDENTIFIER
 ///     / DOTAMPERSAND
@@ -6329,7 +6264,7 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
 ///    <- EXCLAMATIONMARK LPAREN TokenSequence RPAREN
 ///     / EXCLAMATIONMARK LBRACKET TokenSequence RBRACKET
 ///     / EXCLAMATIONMARK LBRACE TokenSequence RBRACE
-/// FnCallArguments <- LPAREN TemplateExprList RPAREN
+/// FnCallArguments <- LPAREN ExprList RPAREN
 fn parse_single_type_expr_suffixes(
     p: &mut Parser<'_>,
     mut expr: NodeIndex,
@@ -6353,7 +6288,7 @@ fn parse_single_type_expr_suffixes(
                     let mut bind_exprs = vec![];
                     let mut has_trailing_comma = false;
                     while !p.peek(Token!(']')) {
-                        bind_exprs.push(expect_template_expr(p)?);
+                        bind_exprs.push(expect_expr(p)?);
                         has_trailing_comma = p.eat_token(Token!(,));
                         if !has_trailing_comma {
                             break;
@@ -6397,7 +6332,7 @@ fn parse_single_type_expr_suffixes(
                 let mut args_exprs = vec![];
                 let mut has_trailing_comma = false;
                 while !p.peek(Token!(')')) {
-                    args_exprs.push(expect_template_expr(p)?);
+                    args_exprs.push(expect_expr(p)?);
                     has_trailing_comma = p.eat_token(Token!(,));
                     if !has_trailing_comma {
                         break;
@@ -6409,7 +6344,7 @@ fn parse_single_type_expr_suffixes(
                     assert!(args_exprs.len() == 1 || !has_trailing_comma);
                     let bind_expr = args_exprs.first().copied();
                     if has_trailing_comma {
-                        p.push_node(end, NodeData::Call1Comma(expr, bind_expr.unwrap()))
+                        p.push_node(end, NodeData::Call1Comma(expr, bind_expr))
                     } else {
                         p.push_node(end, NodeData::Call1(expr, bind_expr))
                     }
@@ -6430,7 +6365,7 @@ fn parse_single_type_expr_suffixes(
     Ok(expr)
 }
 
-/// ASTERISK (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
+/// ASTERISK (ByteAlign / QUESTIONMARK? KEYWORD_var / QUESTIONMARK? KEYWORD_volatile)*
 fn expect_single_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let tok = p.expect_token(Token!(*))?;
     let (align_expr, pointer_type) = parse_pointer_prefix(p)?;
@@ -6447,7 +6382,7 @@ fn expect_single_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> 
     }
 }
 
-/// LBRACKET ASTERISK (COLON Expr)? RBRACKET (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
+/// LBRACKET ASTERISK (COLON Expr)? RBRACKET (ByteAlign / QUESTIONMARK? KEYWORD_var / QUESTIONMARK? KEYWORD_volatile)*
 fn expect_multi_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let tok = p.expect_token(Token!('['))?;
     p.expect_token(Token!(*))?;
@@ -6472,7 +6407,7 @@ fn expect_multi_pointer_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     }
 }
 
-/// (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
+/// (ByteAlign / QUESTIONMARK? KEYWORD_var / QUESTIONMARK? KEYWORD_volatile)*
 fn parse_pointer_prefix(p: &mut Parser<'_>) -> Result<(Option<NodeIndex>, PointerType), ()> {
     let mut align_expr: Option<NodeIndex> = None;
     let mut pointer_type = PointerType::Default;
@@ -6559,15 +6494,84 @@ fn parse_pointer_prefix(p: &mut Parser<'_>) -> Result<(Option<NodeIndex>, Pointe
     Ok((align_expr, pointer_type))
 }
 
-/// NamespaceTypeExpr <- KEYWORD_namespace DeclBlock
-fn expect_namespace_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let ns_token = p.expect_token(Token!(namespace))?;
-    let decl_block = expect_decl_block(p)?;
+/// ForTypeExpr <- ForPrefix TypeExpr (KEYWORD_else TypeExpr)?
+/// ForPrefix <- KEYWORD_for LPAREN ExprList RPAREN PtrListPayload KEYWORD_inline?
+fn expect_for_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let for_token = p.expect_token(Token!(for))?;
+    p.expect_token(Token!('('))?;
 
-    Ok(p.push_node(ns_token, NodeData::Namespace(decl_block)))
+    let mut iter_exprs = vec![];
+    while !p.eat_token(Token!(')')) {
+        iter_exprs.push(expect_expr(p)?);
+        if !p.eat_token(Token!(,)) {
+            p.expect_token(Token!(')'))?;
+            break;
+        }
+    }
+
+    let mut payloads = vec![];
+    p.expect_token(Token!(|))?;
+    while !p.eat_token(Token!(|)) {
+        let is_ptr = p.eat_token(Token!(*));
+        let ident = p.expect_token(Token!(#<identifier>))?;
+        let has_comma = p.eat_token(Token!(,));
+        payloads.push(p.push_node(ident, NodeData::Payload(is_ptr, has_comma)));
+        if !has_comma {
+            p.expect_token(Token!(|))?;
+            break;
+        }
+    }
+
+    let is_inline = p.eat_token(Token!(inline));
+    let expr = expect_type_expr(p)?;
+    let else_expr = if p.eat_token(Token!(else)) {
+        Some(expect_type_expr(p)?)
+    } else {
+        None
+    };
+
+    if iter_exprs.len() <= 2 && payloads.len() <= 2 {
+        let iter_expr1 = iter_exprs.first().copied();
+        let iter_expr2 = iter_exprs.get(1).copied();
+        let payload1 = payloads.first().copied();
+        let payload2 = payloads.get(1).copied();
+        let main_expr = p.push_packed(ForSimple {
+            iter_expr1,
+            iter_expr2,
+            payload1,
+            payload2,
+            expr,
+        });
+        if is_inline {
+            Ok(p.push_node(for_token, NodeData::ForSimpleInline(main_expr, else_expr)))
+        } else {
+            Ok(p.push_node(for_token, NodeData::ForSimple(main_expr, else_expr)))
+        }
+    } else {
+        let iter_exprs = p.push_packed_list(&iter_exprs);
+        let payloads = p.push_packed_list(&payloads);
+        let main_expr = p.push_packed(For {
+            iter_exprs,
+            payloads,
+            expr,
+        });
+        if is_inline {
+            Ok(p.push_node(for_token, NodeData::ForInline(main_expr, else_expr)))
+        } else {
+            Ok(p.push_node(for_token, NodeData::For(main_expr, else_expr)))
+        }
+    }
 }
 
-/// OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? DeclBlock
+/// NamespaceTypeExpr <- KEYWORD_namespace Block
+fn expect_namespace_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    let ns_token = p.expect_token(Token!(namespace))?;
+    let block = expect_block(p)?;
+
+    Ok(p.push_node(ns_token, NodeData::Namespace(block)))
+}
+
+/// OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? Block
 fn expect_opaque_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let container_token = p.expect_token(Token!(opaque))?;
     let layout_expr = if p.eat_token(Token!('(')) {
@@ -6578,22 +6582,19 @@ fn expect_opaque_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         None
     };
     let is_const = p.eat_token(Token!(const));
-    let decl_block = expect_decl_block(p)?;
+    let block = expect_block(p)?;
 
     if is_const {
         Ok(p.push_node(
             container_token,
-            NodeData::ContainerConst(layout_expr, decl_block),
+            NodeData::ContainerConst(layout_expr, block),
         ))
     } else {
-        Ok(p.push_node(
-            container_token,
-            NodeData::Container(layout_expr, decl_block),
-        ))
+        Ok(p.push_node(container_token, NodeData::Container(layout_expr, block)))
     }
 }
 
-/// StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? StructBlock
+/// StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? Block
 fn expect_struct_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let container_token = p.expect_token(Token!(struct))?;
     let layout_expr = if p.eat_token(Token!('(')) {
@@ -6604,30 +6605,27 @@ fn expect_struct_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         None
     };
     let is_const = p.eat_token(Token!(const));
-    let struct_block = expect_struct_block(p)?;
+    let block = expect_block(p)?;
 
     if is_const {
         Ok(p.push_node(
             container_token,
-            NodeData::ContainerConst(layout_expr, struct_block),
+            NodeData::ContainerConst(layout_expr, block),
         ))
     } else {
-        Ok(p.push_node(
-            container_token,
-            NodeData::Container(layout_expr, struct_block),
-        ))
+        Ok(p.push_node(container_token, NodeData::Container(layout_expr, block)))
     }
 }
 
-/// KEYWORD_primitive LPAREN STRING_LITERAL COMMA DeclBlock RPAREN
+/// KEYWORD_primitive LPAREN STRING_LITERAL COMMA Block RPAREN
 fn expect_primitive_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let primitive_token = p.expect_token(Token!(#primitive))?;
     p.expect_token(Token!('('))?;
     let id_token = p.expect_token(Token!(#<string_literal>))?;
     p.expect_token(Token!(,))?;
-    let decl_block = expect_decl_block(p)?;
+    let block = expect_block(p)?;
     p.expect_token(Token!(')'))?;
-    Ok(p.push_node(primitive_token, NodeData::Primitive(id_token, decl_block)))
+    Ok(p.push_node(primitive_token, NodeData::Primitive(id_token, block)))
 }
 
 /// InitList
@@ -6646,7 +6644,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                 let ident = p.next();
                 p.next();
                 p.next();
-                let init_expr = expect_template_expr(p)?;
+                let init_expr = expect_expr(p)?;
                 FieldInit { ident, init_expr }
             };
             if p.eat_token(Token!(,)) {
@@ -6659,7 +6657,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
                     let ident = p.expect_token(Token!(#<identifier>))?;
                     p.expect_token(Token!(:))?;
                     p.expect_token(Token!(=))?;
-                    let init_expr = expect_template_expr(p)?;
+                    let init_expr = expect_expr(p)?;
                     fields.push(FieldInit { ident, init_expr });
 
                     let comma = p.eat_token(Token!(,));
@@ -6697,7 +6695,7 @@ fn expect_init_list(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
         _ => {
             let mut exprs = vec![];
             let comma = loop {
-                exprs.push(expect_template_expr(p)?);
+                exprs.push(expect_expr(p)?);
                 let comma = p.eat_token(Token!(,));
                 if !comma {
                     p.expect_token(Token!('}'))?;

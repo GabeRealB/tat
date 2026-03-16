@@ -2,7 +2,7 @@
 
 ```tat
 // booleans
-bool, b8, b16, b32, b64
+bool, bN
 
 // integers
 iN, int, intptr
@@ -62,7 +62,7 @@ x{}
 * / % *% *| ||
 + - ++ +% -% +| -|
 << >> <<|
-& ^ | orelse catch
+& ^ | or_else catch
 == != < > <= >= <=>
 and
 or
@@ -213,79 +213,54 @@ Builtin functions are provided by the compiler and are prefixed with `#`. Unlike
 ```
 Root <- skip InnerAttributeRoot* BlockContents eof
 
-RootBlockContents <- DeclBlockContents / StructBlockContents
+BlockContents <- InnerAttribute* Statement*
 
-DeclBlockContents <- InnerAttribute* DeclBlockStatement*
-
-ExprBlockContents <- ExprBlockStatement*
-
-EnumBlockContents <- EnumBlockStatement*
-
-UnionBlockContents <- UnionBlockStatement*
-
-StructBlockContents <- InnerAttribute* StructBlockStatement*
-
-DeclBlock <- LBRACE DeclBlockContents RBRACE
-
-ExprBlock <- LBRACE ExprBlockContents RBRACE
-
-EnumBlock <- LBRACE EnumBlockContents RBRACE
-
-UnionBlock <- LBRACE UnionBlockContents RBRACE
-
-StructBlock <- LBRACE StructBlockContents RBRACE
+Block <- LBRACE BlockContents RBRACE
 
 *** Statements ***
 
-DeclBlockStatement
-    <- KEYWORD_const ExprBlock
-     / ContainerDeclStatement
-
-ExprBlockStatement
-    <- KEYWORD_const ExprBlock
-     / DeclStatement
+Statement 
+    <- KEYWORD_const BlockExpr
+     / KEYWORD_run BlockExpr
      / KEYWORD_defer BlockExprStatement
      / KEYWORD_cont_defer BlockExprStatement
      / KEYWORD_err_defer BlockExprStatement
      / IfStatement
      / LabeledStatement
-     / AssignExpr
-
-UnionBlockStatement
-    <- KEYWORD_const ExprBlock
-     / ImplBlockStatement
-     / UnionField
-     / ContainerDeclStatement
-
-StructBlockStatement
-    <- KEYWORD_const ExprBlock
-     / ImplBlockStatement
-     / StructField
-     / ContainerDeclStatement
-
-UnionField <- OuterAttribute* KEYWORD_inline? IDENTIFIER ByteAlign? COLON TypeExpr? COMMA?
-
-StructField <- OuterAttribute* KEYWORD_inline? IDENTIFIER ByteAlign? COLON (TypeExpr / TypeExpr? EQUAL TemplateExpr) COMMA?
-
-ContainerDeclStatement
-    <- KEYWORD_thread_local? DeclProtoPub (COMMA DeclProtoPub)* (COLON TypeExpr? COLON / COLON2) TemplateExpr SEMICOLON
-
-DeclProto <- OuterAttribute* KEYWORD_var? IDENTIFIER ByteAlign?
-DeclProtoPub <- OuterAttribute* KEYWORD_pub? KEYWORD_var? IDENTIFIER ByteAlign?
+     / DeclStatement
+     / ExprStatement
 
 BlockExprStatement
     <- BlockExpr
-     / AssignExpr SEMICOLON
+     / ExprStatement
 
 BlockExpr <- BlockLabel? Block
 
-ExprStatement <- AssignExpr SEMICOLON
-
 IfStatement <- TODO
 
-LabeledStatement <- TODO
+LabeledStatement <- BlockLabel? (Block / LoopStatement / SwitchExpr)
 
-ImplBlockStatement <- OuterAttribute* KEYWORD_impl Expr DeclBlock
+LoopStatement <- ForStatement / WhileStatement
+
+ForStatement <- TODO
+
+WhileStatement <- TODO
+
+DeclStatement
+    <- OuterDocComment* (ConstDeclStatement / GlobalDeclStatement) SEMICOLON
+
+ConstDeclStatement 
+    <- DeclProto (COMMA DeclProto)* (COLON TypeExpr? COLON / COLON2) Expr (COMMA Expr)*
+
+GlobalDeclStatement
+    <- (KEYWORD_thread_local / KEYWORD_static)? LocalDeclStatement
+
+LocalDeclStatement
+    <- DeclProto (COMMA DeclProto)* COLON TypeExpr? EQUAL Expr (COMMA Expr)*
+
+DeclProto <- KEYWORD_pub? KEYWORD_var? KEYWORD_inline? IDENTIFIER ByteAlign? OuterAnnotation*
+
+ExprStatement <- AssignExpr SEMICOLON
 
 # *** Attributes ***
 
@@ -299,17 +274,15 @@ RootAttribute <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const?
 
 InnerAnnotation <- POUNDEXCLAMATIONMARK LBRACKET EQUAL Expr RBRACKET
 
-OuterAttribute <- OuterDocComment / OuterAnnotation
-
 OuterAnnotation <- POUND LBRACKET EQUAL Expr RBRACKET
 
 # *** Expressions ***
 
-AssignExpr <- TODO
+AssignExpr <- Expr (AssignOp Expr / (COMMA Expr)+ EQUAL Expr (COMMA Expr)*)?
 
-TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? Expr
+Expr <- TemplateExpr
 
-Expr <- RangeExpr
+TemplateExpr <- TemplateExprPrefix? TemplateExprConstraint? RangeExpr
 
 RangeExpr <- BoolOrExpr (DOT2 BoolOrExpr? / DOT2EQUAL BoolOrExpr) / (DOT2 / DOT2EQUAL) BoolOrExpr
 
@@ -332,14 +305,14 @@ PrefixExpr <- PrefixOp* PrimaryExpr
 PrimaryExpr
     <- AsmExpr
      / IfExpr
-     / KEYWORD_break BreakLabel? TemplateExpr?
-     / KEYWORD_const TemplateExpr
-     / KEYWORD_continue BreakLabel? TemplateExpr?
-     / KEYWORD_return TemplateExpr?
-     / KEYWORD_throw TemplateExpr?
+     / KEYWORD_break BreakLabel? Expr?
+     / KEYWORD_const Expr
+     / KEYWORD_continue BreakLabel? Expr?
+     / KEYWORD_return Expr?
+     / KEYWORD_throw Expr?
      / BlockLabel? LoopExpr / TryExpr
      / FnExpr
-     / ExprBlock
+     / Block
      / CurlySuffixExpr
 
 AsmExpr <- KEYWORD_asm AsmCaptures? LPAREN (AsmInput COMMA)? Expr COMMA? RPAREN KEYWORD_volatile? AsmOutput? AsmBlock
@@ -348,13 +321,13 @@ IfExpr <- TODO
 
 LoopExpr <- ForExpr / WhileExpr
 
-ForExpr <- TODO
+ForExpr <- ForPrefix Expr (KEYWORD_else Expr)?
 
-WhileExpr <- TODO
+WhileExpr <- WhilePrefix Expr (KEYWORD_else Payload? Expr)?
 
-TryExpr <- TODO
+TryExpr <- KEYWORD_try Block
 
-FnExpr <- KEYWORD_fn FnCaptures? FnArgs FnModifier? FnCallConv? FnReturn? FnWhere? ExprBlock
+FnExpr <- KEYWORD_fn FnCaptures? FnArgs FnModifier? FnCallConv? FnReturn? FnWhere? Block
 
 CurlySuffixExpr <- TypeExpr InitList?
 
@@ -378,7 +351,7 @@ PrimaryTypeExpr
      / CORE_IDENTIFIER
      / BUILTIN_IDENTIFIER
      / KEYWORD_const TypeExpr
-     / KEYWORD_impl TypeExpr
+     / KEYWORD_where TypeExpr
      / KEYWORD_Self
      / KEYWORD_self
      / KEYWORD_unreachable
@@ -398,23 +371,34 @@ PrimaryTypeExpr
 
 IfTypeExpr <- TODO
 
-LabeledTypeExpr <- TODO
+LabeledTypeExpr 
+    <- BlockLabel Block
+     / BlockLabel? LoopTypeExpr
+     / BlockLabel? SwitchExpr
+
+LoopTypeExpr <- ForTypeExpr / WhileTypeExpr
+
+ForTypeExpr <- ForPrefix TypeExpr (KEYWORD_else TypeExpr)?
+
+WhileTypeExpr <- WhilePrefix TypeExpr (KEYWORD_else Payload? TypeExpr)?
+
+SwitchExpr <- TODO
 
 GroupedTypeExpr <- TODO
 
-EnumTypeExpr <- KEYWORD_enum (LPAREN Expr RPAREN)? KEYWORD_const? EnumBlock
+EnumTypeExpr <- KEYWORD_enum (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
 FnptrTypeExpr <- TODO
 
-NamespaceTypeExpr <- KEYWORD_namespace DeclBlock
+NamespaceTypeExpr <- KEYWORD_namespace Block
 
-OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? DeclBlock
+OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
-PrimitiveTypeExpr <- KEYWORD_primitive LPAREN STRING_LITERAL COMMA DeclBlock RPAREN
+PrimitiveTypeExpr <- KEYWORD_primitive LPAREN STRING_LITERAL COMMA Block RPAREN
 
-StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? StructBlock
+StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
-UnionTypeExpr <- KEYWORD_union (LPAREN Expr RPAREN)? KEYWORD_const? UnionBlock
+UnionTypeExpr <- KEYWORD_union (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
 TemplateTypeExpr <- KEYWORD_with LBRACKET (TemplateTypeExprParamList (COMMA DOT3 COMMA?)? / (DOT3 COMMA?)?) RBRACKET MINUSARROW TypeExpr
 
@@ -453,7 +437,7 @@ BitwiseOp
     <- AMPERSAND
      / CARET
      / PIPE
-     / KEYWORD_orelse
+     / KEYWORD_or_else
      / KEYWORD_catch Payload?
 
 BitShiftOp
@@ -486,15 +470,15 @@ PrefixOp
 
 PrefixTypeOp
     <- QUESTIONMARK
-     / SliceTypeStart (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
-     / PtrTypeStart (ByteAlign / COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)*
+     / SliceTypeStart
+     / PtrTypeStart (ByteAlign / QUESTIONMARK? KEYWORD_var / QUESTIONMARK? KEYWORD_volatile)*
      / VectorTypeStart
      / MatrixTypeStart
      / ArrayTypeStart
 
 SuffixOp
     <- LBRACKET Expr RBRACKET
-     / DOT2 LBRACKET (TemplateExprList / DOT3) RBRACKET
+     / COLON2 LBRACKET (ExprList / DOT3) RBRACKET
      / DOT IDENTIFIER
      / MINUSARROW IDENTIFIER
      / DOTAMPERSAND
@@ -507,7 +491,7 @@ MacroCallArguments
      / EXCLAMATIONMARK LBRACKET TokenSequence RBRACKET
      / EXCLAMATIONMARK LBRACE TokenSequence RBRACE
 
-FnCallArguments <- LPAREN TemplateExprList RPAREN
+FnCallArguments <- LPAREN ExprList RPAREN
 
 # *** Templates ***
 
@@ -557,7 +541,7 @@ FnArgModifier <- KEYWORD_const / KEYWORD_no_alias
 
 FnReceiver <- FnArgModifier? ((COMMA? KEYWORD_var / COMMA? KEYWORD_volatile)* ASTERISK)? KEYWORD_self
 
-FnArgsItem <- FnArgModifier? IDENTIFIER COLON TypeExpr (EQUAL TemplateExpr)?
+FnArgsItem <- FnArgModifier? IDENTIFIER COLON TypeExpr (EQUAL Expr)?
 
 FnModifier <- KEYWORD_const / KEYWORD_inline / KEYWORD_no_inline
 
@@ -581,9 +565,23 @@ PtrTypeStart
 
 SliceTypeStart <- LBRACKET (COLON Expr)? RBRACKET
 
+# *** Control flow prefixes ***
+
+IfPrefix <- KEYWORD_if KEYWORD_const? LPAREN Expr RPAREN PtrPayload
+
+ForPrefix <- KEYWORD_for LPAREN ExprList RPAREN PtrListPayload KEYWORD_inline?
+
+WhilePrefix <- KEYWORD_while LPAREN Expr RPAREN PtrPayload? KEYWORD_inline?
+
 # *** Payloads ***
 
-Payload <- TODO
+Payload <- PIPE IDENTIFIER PIPE
+
+PtrPayload <- PIPE ASTERISK? IDENTIFIER PIPE
+
+PtrIndexPayload <- PIPE ASTERISK? IDENTIFIER (COMMA IDENTIFIER)? PIPE
+
+PtrListPayload <- PIPE ASTERISK? IDENTIFIER (COMMA ASTERISK? IDENTIFIER)* COMMA? PIPE
 
 # *** Token sequences ***
 
@@ -595,18 +593,18 @@ BreakLabel <- COLON IDENTIFIER
 
 BlockLabel <- IDENTIFIER COLON
 
-FieldInit <- IDENTIFIER COLON EQUAL TemplateExpr
+FieldInit <- IDENTIFIER COLON EQUAL Expr
 
 InitList
     <- LBRACE FieldInit (COMMA FieldInit)* COMMA? RBRACE
-     / LBRACE TemplateExpr (COMMA TemplateExpr)* COMMA? RBRACE
+     / LBRACE Expr (COMMA Expr)* COMMA? RBRACE
      / LBRACE RBRACE
 
 ByteAlign <- KEYWORD_align LPAREN Expr RPAREN
 
 # *** Lists ***
 
-TemplateExprList <- (TemplateExpr COMMA)* TemplateExpr?
+ExprList <- (Expr COMMA)* Expr?
 
 # *** Tokens ***
 
@@ -789,7 +787,6 @@ KEYWORD_fn            <-       'fn'            end_of_word
 KEYWORD_fnptr         <-       'fnptr'         end_of_word
 KEYWORD_for           <-       'for'           end_of_word
 KEYWORD_if            <-       'if'            end_of_word
-KEYWORD_impl          <-       'impl'          end_of_word
 KEYWORD_inline        <-       'inline'        end_of_word
 KEYWORD_no_alias      <-       'no_alias'      end_of_word
 KEYWORD_no_inline     <-       'no_inline'     end_of_word
@@ -801,6 +798,7 @@ KEYWORD_pub           <-       'pub'           end_of_word
 KEYWORD_return        <-       'return'        end_of_word
 KEYWORD_Self          <-       'Self'          end_of_word
 KEYWORD_self          <-       'self'          end_of_word
+KEYWORD_static        <-       'static'        end_of_word
 KEYWORD_struct        <-       'struct'        end_of_word
 KEYWORD_switch        <-       'switch'        end_of_word
 KEYWORD_thread_local  <-       'thread_local'  end_of_word
@@ -821,10 +819,10 @@ Keyword
      / KEYWORD_continue / KEYWORD_defer / KEYWORD_else
      / KEYWORD_enum / KEYWORD_err_defer / KEYWORD_fn
      / KEYWORD_fnptr / KEYWORD_for / KEYWORD_if
-     / KEYWORD_impl / KEYWORD_inline / KEYWORD_noalias
-     / KEYWORD_noinline / KEYWORD_opaque / KEYWORD_or
-     / KEYWORD_orelse / KEYWORD_primitive / KEYWORD_pub
-     / KEYWORD_return / KEYWORD_Self / KEYWORD_self
+     / KEYWORD_inline / KEYWORD_noalias / KEYWORD_no_inline
+     / KEYWORD_opaque / KEYWORD_or / KEYWORD_or_else
+     / KEYWORD_primitive / KEYWORD_pub / KEYWORD_return
+     / KEYWORD_Self / KEYWORD_self / KEYWORD_static
      / KEYWORD_struct / KEYWORD_switch / KEYWORD_thread_local
      / KEYWORD_throw / KEYWORD_try / KEYWORD_union
      / KEYWORD_unreachable / KEYWORD_var / KEYWORD_volatile

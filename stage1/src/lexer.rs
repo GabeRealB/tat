@@ -1,42 +1,14 @@
 use std::fmt::Display;
 use std::marker::ConstParamTy;
-use std::ops::Range;
-use std::sync::Arc;
 use std::{collections::BTreeMap, sync::OnceLock};
 
 #[cfg(test)]
 use std::ffi::{CStr, CString};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
-    buffer: Arc<[u8]>,
-    range: Range<usize>,
-}
-
-impl Span {
-    pub fn buffer(&self) -> &[u8] {
-        &self.buffer[self.byte_range()]
-    }
-
-    pub fn byte_range(&self) -> Range<usize> {
-        self.range.clone()
-    }
-
-    pub fn combine_range(&self, other: &Self) -> Self {
-        assert!(self.buffer.as_ptr() == other.buffer.as_ptr());
-        let start = self.range.start.min(other.range.start);
-        let end = self.range.end.max(other.range.end);
-        Self {
-            buffer: self.buffer.clone(),
-            range: start..end,
-        }
-    }
-}
-
-impl Display for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(self.buffer()))
-    }
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(ConstParamTy, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -150,8 +122,10 @@ pub enum Tag {
     KwPrimitive,             // #primitive
     KwPub,                   // pub
     KwReturn,                // return
+    KwRun,                   // #run
     KwSelf,                  // Self
     KwSelfIdent,             // self
+    KwStatic,                // static
     KwStruct,                // struct
     KwSwitch,                // switch
     KwThreadLocal,           // thread_local
@@ -266,8 +240,10 @@ impl Tag {
         ("#primitive", Self::KwPrimitive),
         ("pub", Self::KwPub),
         ("return", Self::KwReturn),
+        ("#run", Self::KwRun),
         ("Self", Self::KwSelf),
         ("self", Self::KwSelfIdent),
+        ("static", Self::KwStatic),
         ("struct", Self::KwStruct),
         ("switch", Self::KwSwitch),
         ("thread_local", Self::KwThreadLocal),
@@ -312,8 +288,10 @@ impl Tag {
         ("#primitive", Self::KwPrimitive),
         ("pub", Self::KwPub),
         ("return", Self::KwReturn),
+        ("#run", Self::KwRun),
         ("Self", Self::KwSelf),
         ("self", Self::KwSelfIdent),
+        ("static", Self::KwStatic),
         ("struct", Self::KwStruct),
         ("switch", Self::KwSwitch),
         ("thread_local", Self::KwThreadLocal),
@@ -439,8 +417,10 @@ impl Tag {
             Tag::KwPrimitive => Some("#primitive"),
             Tag::KwPub => Some("pub"),
             Tag::KwReturn => Some("return"),
+            Tag::KwRun => Some("#run"),
             Tag::KwSelf => Some("Self"),
             Tag::KwSelfIdent => Some("self"),
+            Tag::KwStatic => Some("static"),
             Tag::KwStruct => Some("struct"),
             Tag::KwSwitch => Some("switch"),
             Tag::KwThreadLocal => Some("thread_local"),
@@ -501,20 +481,14 @@ pub struct Token {
     pub tag: Tag,
 }
 
-impl Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.span)
-    }
-}
-
 #[derive(Debug, Clone)]
-pub struct Tokenizer {
-    buffer: Arc<[u8]>,
+pub struct Tokenizer<'a> {
+    buffer: &'a [u8],
     index: usize,
 }
 
-impl Tokenizer {
-    pub fn new(buffer: Arc<[u8]>) -> Self {
+impl<'a> Tokenizer<'a> {
+    pub fn new(buffer: &'a [u8]) -> Self {
         // Skip the UTF-8 BOM if present.
         let index = if buffer.starts_with(b"\xEF\xBB\xBF") {
             3
@@ -525,7 +499,7 @@ impl Tokenizer {
     }
 }
 
-impl Iterator for Tokenizer {
+impl Iterator for Tokenizer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -621,31 +595,30 @@ impl Iterator for Tokenizer {
         let mut token = Token {
             tag: Tag::Invalid,
             span: Span {
-                buffer: self.buffer.clone(),
-                range: self.index..self.index,
+                start: self.index,
+                end: self.index,
             },
         };
         loop {
             match state {
                 State::Start => match self.buffer[self.index] {
+                    0 if self.index == self.buffer.len() - 1 => {
+                        self.index += 1;
+                        return Some(Token {
+                            tag: Tag::EndOfFile,
+                            span: Span {
+                                start: self.index - 1,
+                                end: self.index,
+                            },
+                        });
+                    }
                     0 => {
-                        if self.index == self.buffer.len() - 1 {
-                            self.index += 1;
-                            return Some(Token {
-                                tag: Tag::EndOfFile,
-                                span: Span {
-                                    buffer: self.buffer.clone(),
-                                    range: self.index - 1..self.index,
-                                },
-                            });
-                        } else {
-                            state = State::Invalid;
-                            continue;
-                        }
+                        state = State::Invalid;
+                        continue;
                     }
                     b' ' | b'\n' | b'\t' | b'\r' => {
                         self.index += 1;
-                        token.span.range.start = self.index;
+                        token.span.start = self.index;
                         continue;
                     }
                     b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
@@ -802,7 +775,7 @@ impl Iterator for Tokenizer {
                     match self.buffer[self.index] {
                         b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'0'..=b'9' => continue,
                         _ => {
-                            let ident = &self.buffer[token.span.range.start..self.index];
+                            let ident = &self.buffer[token.span.start..self.index];
                             let ident = str::from_utf8(ident).unwrap();
                             if let Some(tag) = Tag::as_keyword(ident) {
                                 token.tag = tag;
@@ -819,7 +792,7 @@ impl Iterator for Tokenizer {
                             continue;
                         }
                         _ => {
-                            let ident = &self.buffer[token.span.range.start..self.index];
+                            let ident = &self.buffer[token.span.start..self.index];
                             let ident = str::from_utf8(ident).unwrap();
                             if Tag::as_keyword(ident).is_some() {
                                 token.tag = Tag::Invalid;
@@ -833,7 +806,7 @@ impl Iterator for Tokenizer {
                     match self.buffer[self.index] {
                         b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'0'..=b'9' => continue,
                         _ => {
-                            let ident = &self.buffer[token.span.range.start..self.index];
+                            let ident = &self.buffer[token.span.start..self.index];
                             let ident = str::from_utf8(ident).unwrap();
                             if Tag::as_keyword(ident).is_some() {
                                 token.tag = Tag::Invalid;
@@ -847,7 +820,7 @@ impl Iterator for Tokenizer {
                     match self.buffer[self.index] {
                         b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'0'..=b'9' => continue,
                         _ => {
-                            let ident = &self.buffer[token.span.range.start..self.index];
+                            let ident = &self.buffer[token.span.start..self.index];
                             let ident = str::from_utf8(ident).unwrap();
                             if let Some(tag) = Tag::as_keyword(ident) {
                                 token.tag = tag;
@@ -1684,8 +1657,8 @@ impl Iterator for Tokenizer {
                                 return Some(Token {
                                     tag: Tag::EndOfFile,
                                     span: Span {
-                                        buffer: self.buffer.clone(),
-                                        range: self.index - 1..self.index,
+                                        start: self.index - 1,
+                                        end: self.index,
                                     },
                                 });
                             }
@@ -1702,7 +1675,7 @@ impl Iterator for Tokenizer {
                         }
                         b'\n' => {
                             self.index += 1;
-                            token.span.range.start = self.index;
+                            token.span.start = self.index;
                             state = State::Start;
                             continue;
                         }
@@ -1732,15 +1705,15 @@ impl Iterator for Tokenizer {
                                 return Some(Token {
                                     tag: Tag::EndOfFile,
                                     span: Span {
-                                        buffer: self.buffer.clone(),
-                                        range: self.index - 1..self.index,
+                                        start: self.index - 1,
+                                        end: self.index,
                                     },
                                 });
                             }
                         }
                         b'\n' => {
                             self.index += 1;
-                            token.span.range.start = self.index;
+                            token.span.start = self.index;
                             state = State::Start;
                             continue;
                         }
@@ -1758,17 +1731,16 @@ impl Iterator for Tokenizer {
                 State::LineCommentExpectNewline => {
                     self.index += 1;
                     match self.buffer[self.index] {
+                        0 if self.index == self.buffer.len() - 1 => {
+                            token.tag = Tag::Invalid;
+                        }
                         0 => {
-                            if self.index == self.buffer.len() - 1 {
-                                token.tag = Tag::Invalid;
-                            } else {
-                                state = State::Invalid;
-                                continue;
-                            }
+                            state = State::Invalid;
+                            continue;
                         }
                         b'\n' => {
                             self.index += 1;
-                            token.span.range.start = self.index;
+                            token.span.start = self.index;
                             state = State::Start;
                             continue;
                         }
@@ -2210,7 +2182,7 @@ impl Iterator for Tokenizer {
             }
         }
 
-        token.span.range.end = self.index;
+        token.span.end = self.index;
         Some(token)
     }
 }
@@ -2221,14 +2193,14 @@ fn tokenizer_test(buffer: &'_ CStr) -> Vec<Tag> {
         .to_bytes_with_nul()
         .iter()
         .copied()
-        .collect::<Arc<_>>();
-    let tokenizer = Tokenizer::new(buffer.clone());
+        .collect::<Box<_>>();
+    let tokenizer = Tokenizer::new(&buffer);
     let mut tokens = tokenizer.collect::<Vec<_>>();
 
     let last_token = tokens.last().unwrap();
     assert_eq!(last_token.tag, Tag::EndOfFile);
-    assert_eq!(last_token.span.range.start, buffer.len() - 1);
-    assert_eq!(last_token.span.range.end, buffer.len());
+    assert_eq!(last_token.span.start, buffer.len() - 1);
+    assert_eq!(last_token.span.end, buffer.len());
 
     tokens.pop();
     tokens.into_iter().map(|t| t.tag).collect::<Vec<_>>()
