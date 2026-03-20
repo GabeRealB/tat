@@ -12,7 +12,7 @@ use crate::{
     compilation_unit::{Cu, ReportKind},
     intern_pool::{AstInfo, Index, InternPool, TypedIndex},
     packed_stream::{BitPacked, DefaultPackable, Packable, PackedStreamReader, PackedStreamWriter},
-    util::NonMaxU32,
+    util::{NonMaxU32, indent_fmt},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -874,13 +874,6 @@ pub struct HirChunk {
     pub extra: Box<[u32]>,
 }
 
-fn indent_fmt(f: &mut std::fmt::Formatter<'_>, nesting: usize) -> std::fmt::Result {
-    for _ in 0..nesting {
-        f.write_str("    ")?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Default)]
 struct HirFmtHelper {
     ast: Option<TypedIndex<AstInfo>>,
@@ -1427,7 +1420,6 @@ fn lower_ast_expr(
         NodeData::Container(_, _) | NodeData::ContainerConst(_, _) => {
             lower_ast_expr_container(builder, node_idx, kind)
         }
-        NodeData::Primitive(_, _) => todo!(),
         NodeData::Index(_, _) => todo!(),
         NodeData::TypeBinarySuffix(_, _) => todo!(),
         NodeData::TypeUnarySuffix(_) => todo!(),
@@ -1886,11 +1878,12 @@ fn lower_ast_expr_container(
 ) -> Result<Vec<HirIdx>, CompilationError> {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     enum ContainerKind {
-        Enum(bool),
+        Enum,
         Namespace,
-        Opaque(bool),
-        Struct(bool),
-        Union(bool),
+        Opaque,
+        Struct,
+        Union,
+        Primitive,
     }
 
     let name_strategy = match kind {
@@ -1900,16 +1893,14 @@ fn lower_ast_expr_container(
     };
 
     let node = builder.ast.get_node(node_idx);
+    let is_const = matches!(node.data, NodeData::ContainerConst(_, _));
     let container_kind = match builder.ast.get_token(node.main_token).tag {
-        Token!(enum) => ContainerKind::Enum(matches!(node.data, NodeData::ContainerConst(_, _))),
+        Token!(enum) => ContainerKind::Enum,
         Token!(namespace) => ContainerKind::Namespace,
-        Token!(opaque) => {
-            ContainerKind::Opaque(matches!(node.data, NodeData::ContainerConst(_, _)))
-        }
-        Token!(struct) => {
-            ContainerKind::Struct(matches!(node.data, NodeData::ContainerConst(_, _)))
-        }
-        Token!(union) => ContainerKind::Union(matches!(node.data, NodeData::ContainerConst(_, _))),
+        Token!(opaque) => ContainerKind::Opaque,
+        Token!(struct) => ContainerKind::Struct,
+        Token!(union) => ContainerKind::Union,
+        Token!(#primitive) => ContainerKind::Primitive,
         _ => unreachable!(),
     };
     let (layout, block) = match node.data {
@@ -1924,7 +1915,52 @@ fn lower_ast_expr_container(
         NodeData::BlockSemicolon(members) => AstRangeIterator::Many(members),
         _ => unreachable!(),
     };
-    debug_assert!(container_kind != ContainerKind::Namespace || layout.is_none());
+
+    if is_const
+        && matches!(
+            container_kind,
+            ContainerKind::Namespace | ContainerKind::Primitive
+        )
+    {
+        let loc = builder.get_loc(node_idx);
+        let span = loc.into_range();
+        let report = [Level::ERROR
+            .primary_title(match container_kind {
+                ContainerKind::Namespace => "namespace can not be marked as `const`",
+                ContainerKind::Primitive => "primitive can not be marked as `const`",
+                _ => unreachable!(),
+            })
+            .element(
+                Snippet::source(builder.ast.get_source())
+                    .annotation(AnnotationKind::Context.span(span)),
+            )];
+        builder.cu.emit_report(&report, ReportKind::Error);
+        return Err(CompilationError);
+    }
+
+    if layout.is_some() && container_kind == ContainerKind::Namespace {
+        let loc = builder.get_loc(node_idx);
+        let span = loc.into_range();
+        let report = [Level::ERROR
+            .primary_title("namespace layout not permitted")
+            .element(
+                Snippet::source(builder.ast.get_source())
+                    .annotation(AnnotationKind::Context.span(span)),
+            )];
+        builder.cu.emit_report(&report, ReportKind::Error);
+        return Err(CompilationError);
+    }
+
+    if layout.is_none() && container_kind == ContainerKind::Primitive {
+        let loc = builder.get_loc(node_idx);
+        let span = loc.into_range();
+        let report = [Level::ERROR.primary_title("expected primitive id").element(
+            Snippet::source(builder.ast.get_source())
+                .annotation(AnnotationKind::Context.span(span)),
+        )];
+        builder.cu.emit_report(&report, ReportKind::Error);
+        return Err(CompilationError);
+    }
 
     let mut expr_members = vec![];
     expr_members.extend(builder.set_dbg_loc(node_idx));
@@ -1947,13 +1983,14 @@ fn lower_ast_expr_container(
 
     let block_members = builder.push_packed_list(&block_members);
     let node = match container_kind {
-        ContainerKind::Enum(_) => todo!(),
+        ContainerKind::Enum => todo!(),
         ContainerKind::Namespace => {
             Hir::Namespace(name_strategy, builder.push_packed(block_members))
         }
-        ContainerKind::Opaque(_) => todo!(),
-        ContainerKind::Struct(_) => todo!(),
-        ContainerKind::Union(_) => todo!(),
+        ContainerKind::Opaque => todo!(),
+        ContainerKind::Struct => todo!(),
+        ContainerKind::Union => todo!(),
+        ContainerKind::Primitive => todo!(),
     };
     builder.patch_node(ir_idx, node);
 

@@ -55,7 +55,7 @@ rawptr
 ### Precedence
 
 ```
-x!() x() x[] x::<> x.y x->y x.& x.* x.! x.?
+x!() x() x[] x.y x->y x.& x.* x.! x.?
 x...
 x{}
 !x -x -%x ~x ?x ...x
@@ -358,13 +358,8 @@ PrimaryTypeExpr
      / INT_LITERAL
      / STRING_LITERAL
      / RAW_STRING_LITERAL
-     / EnumTypeExpr
+     / ContainerTypeExpr
      / FnptrTypeExpr
-     / NamespaceTypeExpr
-     / OpaqueTypeExpr
-     / PrimitiveTypeExpr
-     / StructTypeExpr
-     / UnionTypeExpr
 
 IfTypeExpr <- TODO
 
@@ -383,19 +378,11 @@ SwitchExpr <- TODO
 
 GroupedTypeExpr <- TODO
 
-EnumTypeExpr <- KEYWORD_enum (LPAREN Expr RPAREN)? KEYWORD_const? Block
+ContainerTypeExpr <- ContainerKind (LPAREN Expr RPAREN)? KEYWORD_const? Block
+
+ContainerKind <- KEYWORD_enum / KEYWORD_namespace / KEYWORD_opaque / KEYWORD_primitive / KEYWORD_struct / KEYWORD_union
 
 FnptrTypeExpr <- TODO
-
-NamespaceTypeExpr <- KEYWORD_namespace Block
-
-OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? Block
-
-PrimitiveTypeExpr <- KEYWORD_primitive LPAREN STRING_LITERAL COMMA Block RPAREN
-
-StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? Block
-
-UnionTypeExpr <- KEYWORD_union (LPAREN Expr RPAREN)? KEYWORD_const? Block
 
 # *** Operators ***
 
@@ -473,7 +460,6 @@ PrefixTypeOp
 
 SuffixOp
     <- LBRACKET Expr RBRACKET
-     / COLON2 LBRACKET (ExprList / DOT3) RBRACKET
      / DOT IDENTIFIER
      / MINUSARROW IDENTIFIER
      / DOTAMPERSAND

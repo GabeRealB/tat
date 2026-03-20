@@ -693,7 +693,6 @@ impl Ast {
                 NodeData::RawStringLiteral(_, _) => node.main_token,
                 NodeData::Container(_, _) => node.main_token,
                 NodeData::ContainerConst(_, _) => node.main_token,
-                NodeData::Primitive(_, _) => node.main_token,
                 NodeData::Index(ty_expr, _) => {
                     idx = ty_expr;
                     continue;
@@ -947,7 +946,6 @@ impl Ast {
                     idx = block;
                     continue;
                 }
-                NodeData::Primitive(token_index, node_index) => todo!(),
                 NodeData::Index(_, _) => node.main_token,
                 NodeData::Call1(_, _) => node.main_token,
                 NodeData::Call1Comma(_, _) => node.main_token,
@@ -1881,10 +1879,6 @@ impl Display for Ast {
                     }
                     writeln!(f, "const := true, block := {block})")?;
                 }
-                NodeData::Primitive(id, block) => {
-                    let id = self.get_string_lit(*id);
-                    writeln!(f, "{idx} := #primitive({id}, block := {block})")?
-                }
                 NodeData::Index(expr, index_expr) => {
                     writeln!(f, "{idx} := index(expr := {expr}, index := {index_expr})")?
                 }
@@ -2632,12 +2626,6 @@ pub enum NodeData {
     ///
     /// `main_token` is the container token.
     ContainerConst(Option<NodeIndex>, NodeIndex),
-    /// `#primitive("...", {...})`
-    /// 1. String token
-    /// 2. Block
-    ///
-    /// `main_token` is the `#primitive` token.
-    Primitive(TokenIndex, NodeIndex),
     /// `type_expr[expr]`
     /// 1. Type expression
     /// 2. Index expression
@@ -5704,15 +5692,15 @@ fn expect_single_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
             }
             p.push_node(first_tok, NodeData::RawStringLiteral(first_tok, last_tok))
         }
-        Token!(enum) => todo!("enum"),
+        Token!(enum)
+        | Token!(namespace)
+        | Token!(opaque)
+        | Token!(struct)
+        | Token!(union)
+        | Token!(#primitive) => expect_container_type_expr(p)?,
         Token!(fnptr) => {
             todo!("fnptr")
         }
-        Token!(namespace) => expect_namespace_type_expr(p)?,
-        Token!(opaque) => expect_opaque_type_expr(p)?,
-        Token!(struct) => expect_struct_type_expr(p)?,
-        Token!(union) => todo!("union"),
-        Token!(#primitive) => expect_primitive_type_expr(p)?,
         _ => {
             p.fail(ErrorData::ExpectedTypeExpr)?;
             unreachable!()
@@ -5995,17 +5983,19 @@ fn expect_for_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     }
 }
 
-/// NamespaceTypeExpr <- KEYWORD_namespace Block
-fn expect_namespace_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let ns_token = p.expect_token(Token!(namespace))?;
-    let block = expect_block(p)?;
-
-    Ok(p.push_node(ns_token, NodeData::Container(None, block)))
-}
-
-/// OpaqueTypeExpr <- KEYWORD_opaque (LPAREN Expr RPAREN)? KEYWORD_const? Block
-fn expect_opaque_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let container_token = p.expect_token(Token!(opaque))?;
+/// ContainerKind <- KEYWORD_enum / KEYWORD_namespace / KEYWORD_opaque / KEYWORD_primitive / KEYWORD_struct / KEYWORD_union
+/// ContainerTypeExpr <- ContainerKind (LPAREN Expr RPAREN)? KEYWORD_const? Block
+fn expect_container_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
+    debug_assert!(matches!(
+        p.tag(),
+        Token!(enum)
+            | Token!(namespace)
+            | Token!(opaque)
+            | Token!(struct)
+            | Token!(union)
+            | Token!(#primitive)
+    ));
+    let container_token = p.next();
     let layout_expr = if p.eat_token(Token!('(')) {
         let expr = expect_expr(p)?;
         p.expect_token(Token!(')'))?;
@@ -6024,40 +6014,6 @@ fn expect_opaque_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     } else {
         Ok(p.push_node(container_token, NodeData::Container(layout_expr, block)))
     }
-}
-
-/// StructTypeExpr <- KEYWORD_struct (LPAREN Expr RPAREN)? KEYWORD_const? Block
-fn expect_struct_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let container_token = p.expect_token(Token!(struct))?;
-    let layout_expr = if p.eat_token(Token!('(')) {
-        let expr = expect_expr(p)?;
-        p.expect_token(Token!(')'))?;
-        Some(expr)
-    } else {
-        None
-    };
-    let is_const = p.eat_token(Token!(const));
-    let block = expect_block(p)?;
-
-    if is_const {
-        Ok(p.push_node(
-            container_token,
-            NodeData::ContainerConst(layout_expr, block),
-        ))
-    } else {
-        Ok(p.push_node(container_token, NodeData::Container(layout_expr, block)))
-    }
-}
-
-/// KEYWORD_primitive LPAREN STRING_LITERAL COMMA Block RPAREN
-fn expect_primitive_type_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
-    let primitive_token = p.expect_token(Token!(#primitive))?;
-    p.expect_token(Token!('('))?;
-    let id_token = p.expect_token(Token!(#<string_literal>))?;
-    p.expect_token(Token!(,))?;
-    let block = expect_block(p)?;
-    p.expect_token(Token!(')'))?;
-    Ok(p.push_node(primitive_token, NodeData::Primitive(id_token, block)))
 }
 
 /// InitList

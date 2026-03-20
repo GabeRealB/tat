@@ -206,11 +206,11 @@ async fn compilation_task(stop_token: channel::Sender<()>, cu: Arc<Cu>) {
     root_file_path.push(b'\0');
     let root_file_path = str::from_utf8(&root_file_path).unwrap();
 
-    let pool = cu.pool.get_or_init_local_pool().await;
-    let root_module_name = pool.intern_cstring("root\0").await;
-    let root_directory_path = pool.intern_cstring(root_directory_path).await;
-    let root_file_path = pool.intern_cstring(root_file_path).await;
-    let root_module = pool
+    let ip = cu.pool();
+    let root_module_name = ip.intern_cstring("root\0").await;
+    let root_directory_path = ip.intern_cstring(root_directory_path).await;
+    let root_file_path = ip.intern_cstring(root_file_path).await;
+    let root_module = ip
         .intern_root_module(KeyModule {
             root_directory_path,
             root_file_path,
@@ -219,7 +219,7 @@ async fn compilation_task(stop_token: channel::Sender<()>, cu: Arc<Cu>) {
         })
         .await;
 
-    let root_file = pool
+    let root_file = ip
         .intern_file(KeyFile {
             file_path: root_file_path,
             qualified_name: root_module_name,
@@ -227,9 +227,8 @@ async fn compilation_task(stop_token: channel::Sender<()>, cu: Arc<Cu>) {
         })
         .await;
 
-    let pool = cu.pool.get_or_init_local_pool().await;
-    let ast_id = pool.intern_ast(ast).await;
-    let ast_info = pool
+    let ast_id = ip.intern_ast(ast).await;
+    let ast_info = ip
         .intern_ast_info(KeyAstInfo {
             file: root_file,
             id: ast_id,
@@ -240,8 +239,8 @@ async fn compilation_task(stop_token: channel::Sender<()>, cu: Arc<Cu>) {
         Ok(x) => x,
         Err(_) => return,
     };
-    let hir_id = pool.intern_hir(hir).await;
-    let hir_info = pool
+    let hir_id = ip.intern_hir(hir).await;
+    let hir_info = ip
         .intern_hir_info(KeyHirInfo {
             ast_info,
             id: hir_id,
@@ -262,7 +261,7 @@ async fn compilation_task(stop_token: channel::Sender<()>, cu: Arc<Cu>) {
             sema: UnsafeCell::new(Sema::new(&cu)),
         }),
     };
-    let scope_id = pool.intern_rscope(scope).await;
+    let scope_id = ip.intern_rscope(scope).await;
     let scope = scope_id.get_from_pool(cu.pool());
     let inner = unsafe { scope.inner.as_ref_unchecked() };
     let sema = unsafe { inner.sema.as_ref_unchecked() };

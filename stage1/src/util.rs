@@ -55,3 +55,10 @@ impl Display for NonMaxU32 {
 }
 
 impl DefaultPackable for NonMaxU32 {}
+
+pub fn indent_fmt(f: &mut std::fmt::Formatter<'_>, nesting: usize) -> std::fmt::Result {
+    for _ in 0..nesting {
+        f.write_str("    ")?;
+    }
+    Ok(())
+}

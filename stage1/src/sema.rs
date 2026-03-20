@@ -11,7 +11,7 @@ use smol::lock::{RwLock, RwLockWriteGuard};
 use num_bigint::BigInt;
 
 use crate::{
-    ast::{DeclType, NodeIndex},
+    ast::{DeclType, ExtraIndex, ExtraIndexRange, NodeIndex},
     compilation_unit::{Cu, ReportKind},
     hir::{
         CompilationError, DeclInfo, DeclProto, Hir, HirChunkView, HirIdx, HirRangeIterator,
@@ -22,6 +22,7 @@ use crate::{
         KeyTypeNamespace, LDScopeId, LazyDeclScope, RawCString, Scope, TypedIndex,
         UnorderedDeclScope, UnorderedDeclScopeInner,
     },
+    packed_stream::{Packable, PackedStreamWriter},
 };
 
 pub struct Sema {
@@ -95,8 +96,16 @@ impl Sema {
             inst_idxs: Default::default(),
         });
 
+        let root_node = inner.push_node_raw(Hir::InlineBlock(None));
         let nodes = HirRangeIterator::Two([Some(HirIdx::ROOT), None]);
-        match sema_block(&cu, self, &mut inner, chunk, nodes).await {
+        let result = sema_block(&cu, self, &mut inner, chunk, nodes).await;
+
+        let inst_idxs = std::mem::take(&mut inner.blocks[0].inst_idxs);
+        let inst_idxs = inner.push_packed_list(&inst_idxs);
+        inner.patch_node(root_node, Hir::InlineBlock(inst_idxs));
+        println!("\n{}", inner.chunk_view().display(cu.pool()));
+
+        match result {
             Ok(result) => {
                 let waiters = {
                     let _scope_guard = rscope.lock.write().await;
@@ -179,8 +188,16 @@ impl Sema {
         let mut block_iter = chunk.block_range_iter(scope.decl_idx).iter(chunk);
         let lazy_idx = block_iter.next().unwrap();
 
+        let root_node = inner.push_node_raw(Hir::InlineBlock(None));
         let nodes = chunk.block_range_iter(lazy_idx);
-        match sema_block(&cu, self, &mut inner, chunk, nodes).await {
+        let result = sema_block(&cu, self, &mut inner, chunk, nodes).await;
+
+        let inst_idxs = std::mem::take(&mut inner.blocks[0].inst_idxs);
+        let inst_idxs = inner.push_packed_list(&inst_idxs);
+        inner.patch_node(root_node, Hir::InlineBlock(inst_idxs));
+        println!("\n{}", inner.chunk_view().display(cu.pool()));
+
+        match result {
             Ok(result) => {
                 assert!(matches!(result, ControlFlow::None(None)));
                 scope.notification.notify().await;
@@ -330,6 +347,10 @@ impl SemaInner {
         }
     }
 
+    fn get_mapped(&self, hir_idx: HirIdx) -> Option<HirIdx> {
+        self.blocks[self.block_idx].inst_map.get(&hir_idx).copied()
+    }
+
     fn get_immediate(&self, hir_idx: HirIdx) -> Option<Index> {
         let block = &self.blocks[self.block_idx];
         let mapped = *block.inst_map.get(&hir_idx)?;
@@ -349,6 +370,21 @@ impl SemaInner {
         idx
     }
 
+    fn patch_node(&mut self, node_idx: HirIdx, node: Hir) {
+        self.nodes[node_idx.get() as usize] = node;
+    }
+
+    fn push_node(&mut self, inst_idx: Option<HirIdx>, node: Hir) -> HirIdx {
+        let idx = self.push_node_raw(node);
+        let block_idx = self.block_idx;
+        let block = &mut self.blocks[block_idx];
+        block.inst_idxs.push(idx);
+        if let Some(inst_idx) = inst_idx {
+            block.inst_map.insert(inst_idx, idx);
+        }
+        idx
+    }
+
     fn push_immediate(&mut self, inst_idx: Option<HirIdx>, value: Index) -> HirIdx {
         let idx = match self.constants.get(&value) {
             Some(&idx) => idx,
@@ -365,6 +401,25 @@ impl SemaInner {
         }
 
         idx
+    }
+
+    fn push_packed<T: Packable>(&mut self, value: T) -> ExtraIndex<T> {
+        let idx = ExtraIndex::new(self.extra.len());
+        let mut stream = PackedStreamWriter::new(&mut self.extra);
+        stream.write(value);
+        idx
+    }
+
+    fn push_packed_list<T: Packable>(&mut self, values: &[T]) -> Option<ExtraIndexRange<T>> {
+        if values.is_empty() {
+            return None;
+        }
+
+        let start = ExtraIndex::new(self.extra.len());
+        let mut stream = PackedStreamWriter::new(&mut self.extra);
+        stream.write_slice(values);
+        let end = ExtraIndex::new(self.extra.len() - 1);
+        Some(ExtraIndexRange(start, end))
     }
 }
 
@@ -474,7 +529,15 @@ async fn sema_block<'a>(
             Hir::ErrDeferBlock(_) => todo!(),
             Hir::ContDeferBlock(_) => todo!(),
 
-            Hir::BreakInline(hir_idx) => todo!(),
+            Hir::BreakInline(val_idx) => {
+                if let Some(immediate) = inner.get_immediate(val_idx) {
+                    return Ok(ControlFlow::None(Some(immediate)));
+                } else {
+                    let val_idx = inner.get_mapped(val_idx).unwrap();
+                    inner.push_node(Some(hir_idx), Hir::BreakInline(val_idx));
+                    return Ok(ControlFlow::None(None));
+                }
+            }
             Hir::BreakLazy(hir_idx) => todo!(),
 
             Hir::MulAssign(hir_idx, hir_idx1) => todo!(),
@@ -590,8 +653,6 @@ async fn sema_container<'a>(
     nodes: HirRangeIterator,
 ) -> Result<(), CompilationError> {
     let ip = cu.pool();
-    let local_ip = ip.get_or_init_local_pool().await;
-
     let hir_info = inner.hir_info().get_from_pool(ip);
     let ast_info = hir_info.ast_info.get_from_pool(ip);
     let ast = ast_info.id.get_from_pool(ip);
@@ -620,7 +681,7 @@ async fn sema_container<'a>(
                     resolving: Default::default(),
                     sema: UnsafeCell::new(Sema::new(cu)),
                 };
-                let scope_id = local_ip.intern_ldscope(scope).await;
+                let scope_id = ip.intern_ldscope(scope).await;
                 let scope = scope_id.get_from_pool(ip);
                 let scope_decls = unsafe { scope.decls.as_mut_unchecked() };
                 let scope_decl_map = unsafe { scope.decl_map.as_mut_unchecked() };
@@ -661,7 +722,7 @@ async fn sema_container<'a>(
                     let name = ast.get_ident(ident);
                     let mut name = name.to_string();
                     name.push('\0');
-                    let name = local_ip.intern_cstring(&name).await;
+                    let name = ip.intern_cstring(&name).await;
                     if container_decls.contains_key(&name) || scope_decl_map.contains_key(&name) {
                         let name = unsafe { name.as_str() };
                         inner.emit_fatal_error(cu, EvalError::DuplicateDecl(name))?
@@ -681,7 +742,7 @@ async fn sema_container<'a>(
                             annotations: Default::default(),
                         }),
                     };
-                    let decl_id = local_ip.intern_decl(decl).await;
+                    let decl_id = ip.intern_decl(decl).await;
                     container_decls.insert(name, decl_id);
                     scope_decls.push(decl_id);
                     scope_decl_map.insert(name, decl_id);
@@ -740,7 +801,7 @@ async fn sema_namespace<'a>(
         _ => unreachable!(),
     };
 
-    let ip = cu.pool().get_or_init_local_pool().await;
+    let ip = cu.pool();
     let scope = UnorderedDeclScope {
         hir_info: inner.hir_info(),
         decl_loc: inner.src_loc,
@@ -906,8 +967,6 @@ async fn sema_int_literal<'a>(
     hir_idx: HirIdx,
 ) -> Result<(), CompilationError> {
     let ip = cu.pool();
-    let local_ip = ip.get_or_init_local_pool().await;
-
     let hir_info = inner.hir_info().get_from_pool(ip);
     let ast_info = hir_info.ast_info.get_from_pool(ip);
     let ast = ast_info.id.get_from_pool(ip);
@@ -936,7 +995,7 @@ async fn sema_int_literal<'a>(
     };
 
     let value = match u64::try_from(&value) {
-        Ok(value) => local_ip
+        Ok(value) => ip
             .intern_value_int_u64(KeyInt {
                 ty: Index::TY_ANY_INT,
                 storage: KeyIntStorage::U64(value),
@@ -945,13 +1004,12 @@ async fn sema_int_literal<'a>(
             .into_raw(),
         Err(_) => {
             let bytes = value.to_signed_bytes_le();
-            local_ip
-                .intern_value_int_u64(KeyInt {
-                    ty: Index::TY_ANY_INT,
-                    storage: KeyIntStorage::BigInt(KeyBigIntStorage { bytes: &bytes }),
-                })
-                .await
-                .into_raw()
+            ip.intern_value_int_u64(KeyInt {
+                ty: Index::TY_ANY_INT,
+                storage: KeyIntStorage::BigInt(KeyBigIntStorage { bytes: &bytes }),
+            })
+            .await
+            .into_raw()
         }
     };
     inner.push_immediate(Some(hir_idx), value);
@@ -1111,8 +1169,6 @@ async fn sema_load_ident<'a>(
     hir_idx: HirIdx,
 ) -> Result<(), CompilationError> {
     let ip = cu.pool();
-    let local_ip = ip.get_or_init_local_pool().await;
-
     let hir_info = inner.hir_info().get_from_pool(ip);
     let ast_info = hir_info.ast_info.get_from_pool(ip);
     let ast = ast_info.id.get_from_pool(ip);
@@ -1123,7 +1179,7 @@ async fn sema_load_ident<'a>(
     };
     let mut name = ast.get_ident(ident).to_string();
     name.push('\0');
-    let name = local_ip.intern_cstring(&name).await;
+    let name = ip.intern_cstring(&name).await;
     let resolved = lookup_name(cu, sema, inner, name, true).await?;
     let value = match resolved {
         ResolvedName::Decl(decl_id) => {

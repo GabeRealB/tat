@@ -7,7 +7,6 @@ use std::{
     ptr::NonNull,
     sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
     task::Waker,
-    thread::ThreadId,
 };
 
 use bitflags::bitflags;
@@ -1150,7 +1149,7 @@ const PREDEFINED_INDICES: &[(Key, Index)] = &[
 ];
 
 pub struct InternPool {
-    pools: Mutex<RapidHashMap<ThreadId, *mut LocalPoolInner>>,
+    pools: Mutex<Vec<*mut LocalPool>>,
 
     key_shards: Box<[Mutex<RapidHashMap<Key<'static>, Index>>]>,
     #[allow(clippy::type_complexity)]
@@ -1352,23 +1351,27 @@ impl InternPool {
 
     pub async fn init_pool(&self) {
         assert!(self.values_count.load(Ordering::Relaxed) == 0);
-        let local = self.get_or_init_local_pool().await;
         for &(k, idx) in PREDEFINED_INDICES {
-            assert_eq!(local.intern_value(k).await, idx)
+            assert_eq!(self.intern_value(k).await, idx)
         }
     }
 
-    pub async fn get_or_init_local_pool(&self) -> LocalPool {
-        let thread_id = std::thread::current().id();
-        let mut pools = self.pools.lock().await;
-        match pools.get(&thread_id) {
-            Some(&pool) => LocalPool { inner: pool },
-            None => {
-                let pool = Box::new(LocalPoolInner::new(self));
-                let pool = Box::into_raw(pool);
-                pools.insert(thread_id, pool);
-                LocalPool { inner: pool }
-            }
+    async fn get_or_init_local_pool(&self) -> *mut LocalPool {
+        thread_local! {
+            static LOCAL: Cell<(*const InternPool, *mut LocalPool)> = const { Cell::new((std::ptr::null_mut(), std::ptr::null_mut())) };
+        }
+        let (ip, local) = LOCAL.get();
+        assert!((ip.is_null() && local.is_null()) || (std::ptr::eq(ip, self) && !local.is_null()));
+
+        if ip.is_null() {
+            let mut pools = self.pools.lock().await;
+            let pool = Box::new(LocalPool::new(self));
+            let pool = Box::into_raw(pool);
+            pools.push(pool);
+            LOCAL.set((self, pool));
+            pool
+        } else {
+            local
         }
     }
 
@@ -2008,6 +2011,117 @@ impl InternPool {
             KeyTag::Union => todo!(),
         }
     }
+
+    pub async fn intern_ast(&self, ast: Ast) -> AstId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_ast(ast).await }
+    }
+
+    pub async fn intern_hir(&self, hir: HirChunk) -> HirId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_hir(hir).await }
+    }
+
+    pub async fn intern_rscope(&self, scope: RootScope) -> RScopeId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_rscope(scope).await }
+    }
+
+    pub async fn intern_udscope(&self, scope: UnorderedDeclScope) -> UDScopeId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_udscope(scope).await }
+    }
+
+    pub async fn intern_ldscope(&self, scope: LazyDeclScope) -> LDScopeId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_ldscope(scope).await }
+    }
+
+    pub async fn intern_decl(&self, decl: Decl) -> DeclId {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_decl(decl).await }
+    }
+
+    pub async fn intern_string(&self, string: &str) -> RawString {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_string(string).await }
+    }
+
+    pub async fn intern_cstring(&self, string: &str) -> RawCString {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_cstring(string).await }
+    }
+
+    pub async fn intern_value(&self, value: Key<'_>) -> Index {
+        let local = self.get_or_init_local_pool().await;
+        unsafe { (*local.cast_const()).intern_value(value).await }
+    }
+
+    pub async fn intern_root_module(&self, value: KeyModule) -> TypedIndex<Module> {
+        let value = Key::Module(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_file(&self, value: KeyFile) -> TypedIndex<File> {
+        let value = Key::File(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_ast_info(&self, value: KeyAstInfo) -> TypedIndex<AstInfo> {
+        let value = Key::AstInfo(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_hir_info(&self, value: KeyHirInfo) -> TypedIndex<HirInfo> {
+        let value = Key::HirInfo(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_type_namespace(
+        &self,
+        value: KeyTypeNamespace,
+    ) -> TypedIndex<TypeNamespace> {
+        let value = Key::TypeNamespace(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_value_bool(&self, value: KeyBool) -> TypedIndex<ValueBool> {
+        let value = Key::Bool(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_value_char(&self, value: KeyChar) -> TypedIndex<ValueChar> {
+        let value = Key::Char(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_value_int_i64(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntI64> {
+        debug_assert!(matches!(value.storage, KeyIntStorage::I64(_)));
+        let value = Key::Int(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_value_int_u64(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntU64> {
+        debug_assert!(matches!(value.storage, KeyIntStorage::U64(_)));
+        let value = Key::Int(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
+
+    pub async fn intern_value_int_large(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntLarge> {
+        debug_assert!(matches!(value.storage, KeyIntStorage::BigInt(_)));
+        let value = Key::Int(value);
+        let idx = self.intern_value(value).await;
+        unsafe { TypedIndex::from_raw(idx) }
+    }
 }
 
 impl Default for InternPool {
@@ -2021,8 +2135,7 @@ unsafe impl Sync for InternPool {}
 
 impl Drop for InternPool {
     fn drop(&mut self) {
-        let local_pools = self.pools.lock_blocking();
-
+        let mut local_pools = self.pools.lock_blocking();
         unsafe {
             let drop_value = |idx: u32| match self.tags.at_ref(idx) {
                 KeyTag::Module
@@ -2076,40 +2189,25 @@ impl Drop for InternPool {
 
             let mut min_bytes_idx = 0u32;
             let mut min_values_idx = 0u32;
-            for &pool in local_pools.values() {
+            for &pool in &*local_pools {
                 let pool = &*pool;
                 let bytes_idx = pool.bytes_count.get() as u32;
                 if bytes_idx != 0 {
-                    min_bytes_idx = min_bytes_idx.min(bytes_idx);
+                    if min_bytes_idx == 0 {
+                        min_bytes_idx = bytes_idx;
+                    } else {
+                        min_bytes_idx = min_bytes_idx.min(bytes_idx);
+                    }
                 }
 
                 let values_idx = pool.values_count.get() as u32;
                 if values_idx != 0 {
-                    min_values_idx = min_values_idx.min(values_idx);
+                    if min_values_idx == 0 {
+                        min_values_idx = values_idx;
+                    } else {
+                        min_values_idx = min_values_idx.min(values_idx);
+                    }
                 }
-            }
-
-            for idx in 0..min_values_idx {
-                drop_value(idx);
-            }
-
-            for &pool in local_pools.values() {
-                let pool = &*pool;
-                let values_idx = pool.values_count.get() as u32;
-                for idx in values_idx & LocalPoolInner::VALUES_BATCH_LEN..values_idx {
-                    drop_value(idx);
-                }
-
-                let bytes_idx = pool.bytes_count.get() as u32;
-                for idx in bytes_idx & LocalPoolInner::BYTES_BATCH_LEN..bytes_idx {
-                    let ptr = self.bytes.at_ref(idx).as_ptr();
-                    drop(Box::from_raw(ptr));
-                }
-            }
-
-            for idx in 0..min_bytes_idx {
-                let ptr = self.bytes.at_ref(idx).as_ptr();
-                drop(Box::from_raw(ptr));
             }
 
             for idx in 0..self.asts_count.load(Ordering::Relaxed) {
@@ -2141,11 +2239,54 @@ impl Drop for InternPool {
                 let ptr = self.decls.at_or_uninit(idx);
                 (*ptr).assume_init_drop();
             }
+
+            let num_values_batches =
+                self.values_count.load(Ordering::Relaxed) / LocalPool::VALUES_BATCH_LEN;
+            for batch_idx in 0..num_values_batches {
+                let start = batch_idx * LocalPool::VALUES_BATCH_LEN;
+                let mut end = start + LocalPool::VALUES_BATCH_LEN;
+                if end > min_values_idx {
+                    for &pool in &*local_pools {
+                        let values_idx = (*pool).values_count.get() as u32;
+                        if end == values_idx.next_multiple_of(LocalPool::VALUES_BATCH_LEN) {
+                            end = values_idx;
+                        }
+                    }
+                }
+
+                for idx in start..end {
+                    drop_value(idx);
+                }
+            }
+
+            let num_bytes_batches =
+                self.bytes_count.load(Ordering::Relaxed) / LocalPool::BYTES_BATCH_LEN;
+            for batch_idx in 0..num_bytes_batches {
+                let start = batch_idx * LocalPool::BYTES_BATCH_LEN;
+                let mut end = start + LocalPool::BYTES_BATCH_LEN;
+                if end > min_values_idx {
+                    for &pool in &*local_pools {
+                        let bytes_idx = (*pool).bytes_count.get() as u32;
+                        if end == bytes_idx.next_multiple_of(LocalPool::BYTES_BATCH_LEN) {
+                            end = bytes_idx;
+                        }
+                    }
+                }
+
+                for idx in start..end {
+                    let ptr = self.bytes.at_ref(idx).as_ptr();
+                    drop(Box::from_raw(ptr));
+                }
+            }
+
+            for pool in local_pools.drain(..) {
+                drop(Box::from_raw(pool));
+            }
         }
     }
 }
 
-struct LocalPoolInner {
+struct LocalPool {
     global: *const InternPool,
 
     values_count: Cell<u64>,
@@ -2158,7 +2299,7 @@ struct LocalPoolInner {
     ints_large_count: Cell<u32>,
 }
 
-impl LocalPoolInner {
+impl LocalPool {
     const BYTES_BATCH_LEN: u32 = 16;
     const VALUES_BATCH_LEN: u32 = 1024;
 
@@ -2965,115 +3106,6 @@ impl LocalPoolInner {
         }
 
         idx
-    }
-}
-
-#[derive(Debug)]
-pub struct LocalPool {
-    inner: *mut LocalPoolInner,
-}
-
-impl LocalPool {
-    pub async fn intern_ast(&self, ast: Ast) -> AstId {
-        unsafe { (*self.inner.cast_const()).intern_ast(ast).await }
-    }
-
-    pub async fn intern_hir(&self, hir: HirChunk) -> HirId {
-        unsafe { (*self.inner.cast_const()).intern_hir(hir).await }
-    }
-
-    pub async fn intern_rscope(&self, scope: RootScope) -> RScopeId {
-        unsafe { (*self.inner.cast_const()).intern_rscope(scope).await }
-    }
-
-    pub async fn intern_udscope(&self, scope: UnorderedDeclScope) -> UDScopeId {
-        unsafe { (*self.inner.cast_const()).intern_udscope(scope).await }
-    }
-
-    pub async fn intern_ldscope(&self, scope: LazyDeclScope) -> LDScopeId {
-        unsafe { (*self.inner.cast_const()).intern_ldscope(scope).await }
-    }
-
-    pub async fn intern_decl(&self, decl: Decl) -> DeclId {
-        unsafe { (*self.inner.cast_const()).intern_decl(decl).await }
-    }
-
-    pub async fn intern_string(&self, string: &str) -> RawString {
-        unsafe { (*self.inner.cast_const()).intern_string(string).await }
-    }
-
-    pub async fn intern_cstring(&self, string: &str) -> RawCString {
-        unsafe { (*self.inner.cast_const()).intern_cstring(string).await }
-    }
-
-    pub async fn intern_value(&self, value: Key<'_>) -> Index {
-        unsafe { (*self.inner.cast_const()).intern_value(value).await }
-    }
-
-    pub async fn intern_root_module(&self, value: KeyModule) -> TypedIndex<Module> {
-        let value = Key::Module(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_file(&self, value: KeyFile) -> TypedIndex<File> {
-        let value = Key::File(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_ast_info(&self, value: KeyAstInfo) -> TypedIndex<AstInfo> {
-        let value = Key::AstInfo(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_hir_info(&self, value: KeyHirInfo) -> TypedIndex<HirInfo> {
-        let value = Key::HirInfo(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_type_namespace(
-        &self,
-        value: KeyTypeNamespace,
-    ) -> TypedIndex<TypeNamespace> {
-        let value = Key::TypeNamespace(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_value_bool(&self, value: KeyBool) -> TypedIndex<ValueBool> {
-        let value = Key::Bool(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_value_char(&self, value: KeyChar) -> TypedIndex<ValueChar> {
-        let value = Key::Char(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_value_int_i64(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntI64> {
-        debug_assert!(matches!(value.storage, KeyIntStorage::I64(_)));
-        let value = Key::Int(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_value_int_u64(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntU64> {
-        debug_assert!(matches!(value.storage, KeyIntStorage::U64(_)));
-        let value = Key::Int(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
-    }
-
-    pub async fn intern_value_int_large(&self, value: KeyInt<'_>) -> TypedIndex<ValueIntLarge> {
-        debug_assert!(matches!(value.storage, KeyIntStorage::BigInt(_)));
-        let value = Key::Int(value);
-        let idx = self.intern_value(value).await;
-        unsafe { TypedIndex::from_raw(idx) }
     }
 }
 
