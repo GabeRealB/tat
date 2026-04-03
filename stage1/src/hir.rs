@@ -1382,10 +1382,7 @@ fn lower_ast_expr(
         NodeData::Range(_, _) => todo!(),
         NodeData::Binary(_, _) => lower_ast_expr_binary(builder, node_idx, kind),
         NodeData::Unary(_) => lower_ast_expr_unary(builder, node_idx, kind),
-        NodeData::AsmSimple(_, _)
-        | NodeData::AsmVolatileSimple(_, _)
-        | NodeData::Asm(_, _)
-        | NodeData::AsmVolatile(_, _) => todo!(),
+        NodeData::Asm(_, _) => todo!(),
         NodeData::Jump(_, _) => todo!(),
         NodeData::Const(_) => todo!(),
         NodeData::Label(_) => todo!(),

@@ -11,6 +11,9 @@ use crate::{lexer, packed_stream::Packable};
 
 #[macro_export]
 macro_rules! Token {
+    (#<invalid>) => {
+        $crate::lexer::Tag::Invalid
+    };
     (#<eof>) => {
         $crate::lexer::Tag::EndOfFile
     };
@@ -627,10 +630,8 @@ impl Ast {
                     continue;
                 }
                 NodeData::Unary(_) => node.main_token,
-                NodeData::AsmSimple(_, _) => node.main_token,
-                NodeData::AsmVolatileSimple(_, _) => node.main_token,
                 NodeData::Asm(_, _) => node.main_token,
-                NodeData::AsmVolatile(_, _) => node.main_token,
+                NodeData::AsmStatement(_, _) => node.main_token,
                 NodeData::Jump(_, _) => node.main_token,
                 NodeData::Label(_) => node.main_token,
                 NodeData::TryBlock(_) => node.main_token,
@@ -822,10 +823,8 @@ impl Ast {
                     idx = expr;
                     continue;
                 }
-                NodeData::AsmSimple(node_index, node_index1) => todo!(),
-                NodeData::AsmVolatileSimple(node_index, node_index1) => todo!(),
-                NodeData::Asm(extra_index, node_index) => todo!(),
-                NodeData::AsmVolatile(extra_index, node_index) => todo!(),
+                NodeData::Asm(_, end_token) => end_token,
+                NodeData::AsmStatement(_, end_token) => end_token,
                 NodeData::Jump(_, expr) => {
                     if let Some(expr) = expr {
                         idx = expr;
@@ -1147,154 +1146,35 @@ impl Display for Ast {
                     let op = op_token.tag.as_lexeme().unwrap();
                     writeln!(f, "{idx} := unary_op(op := {op}, expr := {expr})")?
                 }
-                NodeData::AsmSimple(clobbers_expr, instr_expr) => writeln!(
-                    f,
-                    "{idx} := asm(captures := [], args := [], clobbers := {clobbers_expr}, outputs := [], instr := {instr_expr})"
-                )?,
-                NodeData::AsmVolatileSimple(clobbers_expr, instr_expr) => writeln!(
-                    f,
-                    "{idx} := asm(volatile, captures := [], args := [], clobbers := {clobbers_expr}, outputs := [], instr := {instr_expr})"
-                )?,
-                NodeData::Asm(proto, instr_expr) => {
-                    let AsmProto {
-                        has_trailing_capture_comma,
-                        has_trailing_input_comma,
-                        clobbers_expr,
-                        captures,
-                        inputs,
-                        outputs,
-                    } = self.get_packed(*proto);
-                    write!(f, "{idx} := asm(captures := [")?;
-                    if let Some(captures) = captures {
-                        for (i, capture) in captures.enumerate() {
-                            let AsmCapture {
-                                ident,
-                                type_expr,
-                                init_expr,
-                            } = self.get_packed(capture);
-                            let ident = self.get_ident(ident);
+                NodeData::Asm(statements, _) => {
+                    write!(f, "{idx} := asm(")?;
+                    if let Some(statements) = statements {
+                        let statements = self.get_packed(*statements);
+                        for (i, statement) in statements.enumerate() {
+                            let idx = self.get_packed(statement);
                             if i != 0 {
                                 write!(f, ", ")?;
                             }
-                            if let Some((type_expr, init_expr)) = type_expr.zip(init_expr) {
-                                write!(f, "{ident}: {type_expr} = {init_expr}")?;
-                            } else if let Some(init_expr) = init_expr {
-                                write!(f, "{ident} := {init_expr}")?;
-                            } else {
-                                write!(f, "{ident}")?;
-                            }
+                            write!(f, "{idx}")?;
                         }
                     }
-                    if has_trailing_capture_comma {
-                        write!(f, ",], inputs := [")?;
-                    } else {
-                        write!(f, "], inputs := [")?;
-                    }
-
-                    if let Some(inputs) = inputs {
-                        for (i, input) in inputs.enumerate() {
-                            let AsmInput { ident, constraint } = self.get_packed(input);
-                            let ident = self.get_ident(ident);
-                            let constraint = self.get_string_lit(constraint);
-                            if i != 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{ident}: {constraint}")?;
-                        }
-                    }
-                    if has_trailing_input_comma {
-                        write!(f, ",], clobbers := {clobbers_expr}, outputs := [")?;
-                    } else {
-                        write!(f, "], clobbers := {clobbers_expr}, outputs := [")?;
-                    }
-
-                    if let Some(outputs) = outputs {
-                        for (i, output) in outputs.enumerate() {
-                            let AsmOutput {
-                                ident,
-                                type_expr,
-                                constraint,
-                            } = self.get_packed(output);
-                            let ident = self.get_ident(ident);
-                            let constraint = self.get_string_lit(constraint);
-                            if i != 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{ident} : {type_expr} {constraint}")?;
-                        }
-                    }
-                    writeln!(f, "], instr := {instr_expr})")?
+                    writeln!(f, ")")?
                 }
-                NodeData::AsmVolatile(proto, instr_expr) => {
-                    let AsmProto {
-                        has_trailing_capture_comma,
-                        has_trailing_input_comma,
-                        clobbers_expr,
-                        captures,
-                        inputs,
-                        outputs,
-                    } = self.get_packed(*proto);
-                    write!(f, "{idx} := asm(volatile, captures := [")?;
-                    if let Some(captures) = captures {
-                        for (i, capture) in captures.enumerate() {
-                            let AsmCapture {
-                                ident,
-                                type_expr,
-                                init_expr,
-                            } = self.get_packed(capture);
-                            let ident = self.get_ident(ident);
-                            if i != 0 {
-                                write!(f, ", ")?;
-                            }
-                            if let Some((type_expr, init_expr)) = type_expr.zip(init_expr) {
-                                write!(f, "{ident}: {type_expr} = {init_expr}")?;
-                            } else if let Some(init_expr) = init_expr {
-                                write!(f, "{ident} := {init_expr}")?;
-                            } else {
-                                write!(f, "{ident}")?;
-                            }
-                        }
-                    }
-                    if has_trailing_capture_comma {
-                        write!(f, ",], inputs := [")?;
+                NodeData::AsmStatement(first, last) => {
+                    let first = self.get_token(*first);
+                    let last = self.get_token(*last);
+                    let start = first.start as usize;
+                    let end = last.start as usize + last.length as usize;
+                    let source = &self.get_source()[start..end];
+                    if source.contains("\r\n") {
+                        let source = source.replace("\r\n", "");
+                        writeln!(f, "{idx} := asm_stmt({source:?})")?;
+                    } else if source.contains("\n") {
+                        let source = source.replace("\n", "");
+                        writeln!(f, "{idx} := asm_stmt({source:?})")?;
                     } else {
-                        write!(f, "], inputs := [")?;
+                        writeln!(f, "{idx} := asm_stmt({source:?})")?;
                     }
-
-                    if let Some(inputs) = inputs {
-                        for (i, input) in inputs.enumerate() {
-                            let AsmInput { ident, constraint } = self.get_packed(input);
-                            let ident = self.get_ident(ident);
-                            let constraint = self.get_string_lit(constraint);
-                            if i != 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{ident}: {constraint}")?;
-                        }
-                    }
-                    if has_trailing_input_comma {
-                        write!(f, ",], clobbers := {clobbers_expr}, outputs := [")?;
-                    } else {
-                        write!(f, "], clobbers := {clobbers_expr}, outputs := [")?;
-                    }
-
-                    if let Some(outputs) = outputs {
-                        for (i, output) in outputs.enumerate() {
-                            let AsmOutput {
-                                ident,
-                                type_expr,
-                                constraint,
-                            } = self.get_packed(output);
-                            let ident = self.get_ident(ident);
-                            let constraint = self.get_string_lit(constraint);
-                            if i != 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{ident} : {type_expr} {constraint}")?;
-                        }
-                    }
-
-                    writeln!(f, "], instr := {instr_expr})")?
                 }
                 NodeData::Jump(label, value_expr) => {
                     let jump_op = self.get_token(main_token);
@@ -1969,8 +1849,9 @@ pub enum ErrorData {
     ExpectedExpr,
     ExpectedPrimaryExpr,
     ExpectedTypeExpr,
-    ExpectedTypeExprOrInit,
     ExpectedPrefixExpr,
+    ExpectedAsmToken,
+    ExpectedAsmBuiltinOperand,
     DoublePubToken,
     DoubleVarToken,
     DoubleInlineToken,
@@ -1998,8 +1879,9 @@ impl ErrorData {
             Self::ExpectedExpr => "expected an expression".into(),
             Self::ExpectedPrimaryExpr => "expected a primary expression".into(),
             Self::ExpectedTypeExpr => "expected a type expression".into(),
-            Self::ExpectedTypeExprOrInit => todo!(),
             Self::ExpectedPrefixExpr => "expected a prefix expression".into(),
+            Self::ExpectedAsmToken => "token is invalid in an `asm` block".into(),
+            Self::ExpectedAsmBuiltinOperand => "expected an identifier or a literal".into(),
             Self::DoublePubToken => "found a duplicate `pub` token".into(),
             Self::DoubleVarToken => "found a duplicate `var` token".into(),
             Self::DoubleInlineToken => "found a duplicate `inline` token".into(),
@@ -2345,30 +2227,18 @@ pub enum NodeData {
     ///
     /// `main_token` is the op token.
     Unary(NodeIndex),
-    /// `asm(expr) { expr }`
-    /// 1. Clobbers expression.
-    /// 2. Instructions expression.
+    /// `asm { ... }`
+    /// 1. Statements.
+    /// 2. Final `}` token.
     ///
     /// `main_token` is the `asm` token.
-    AsmSimple(NodeIndex, NodeIndex),
-    /// `asm(expr) volatile { expr }`
-    /// 1. Clobbers expression.
-    /// 2. Instructions expression.
+    Asm(Option<ExtraIndex<ExtraIndexRange<NodeIndex>>>, TokenIndex),
+    /// `mov rax, [rax+8*rcx+rdx];`
+    /// 1. First token.
+    /// 2. Final `;` token.
     ///
-    /// `main_token` is the `asm` token.
-    AsmVolatileSimple(NodeIndex, NodeIndex),
-    /// `asm[...](..., expr) -> (...) { expr }`
-    /// 1. Asm prototype.
-    /// 2. Instructions expression.
-    ///
-    /// `main_token` is the `asm` token.
-    Asm(ExtraIndex<AsmProto>, NodeIndex),
-    /// `asm[...](..., expr) volatile -> (...) { expr }`
-    /// 1. Asm prototype.
-    /// 2. Instructions expression.
-    ///
-    /// `main_token` is the `asm` token.
-    AsmVolatile(ExtraIndex<AsmProto>, NodeIndex),
+    /// `main_token` is the first token.
+    AsmStatement(TokenIndex, TokenIndex),
     /// `jump_op label expr`
     /// 1. Jump label.
     /// 2. Jump value.
@@ -2766,121 +2636,6 @@ impl Packable for DeclList {
             decl_type,
             prototypes,
             type_expr,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AsmCapture {
-    ident: TokenIndex,
-    type_expr: Option<NodeIndex>,
-    init_expr: Option<NodeIndex>,
-}
-
-impl Packable for AsmCapture {
-    const LEN: usize = <(TokenIndex, Option<NodeIndex>, Option<NodeIndex>)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.ident);
-        buffer.write(self.type_expr);
-        buffer.write(self.init_expr);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            ident: buffer.read(),
-            type_expr: buffer.read(),
-            init_expr: buffer.read(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AsmInput {
-    ident: TokenIndex,
-    constraint: TokenIndex,
-}
-
-impl Packable for AsmInput {
-    const LEN: usize = <(TokenIndex, TokenIndex)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.ident);
-        buffer.write(self.constraint);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            ident: buffer.read(),
-            constraint: buffer.read(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AsmOutput {
-    ident: TokenIndex,
-    type_expr: NodeIndex,
-    constraint: TokenIndex,
-}
-
-impl Packable for AsmOutput {
-    const LEN: usize = <(TokenIndex, NodeIndex, TokenIndex)>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(self.ident);
-        buffer.write(self.type_expr);
-        buffer.write(self.constraint);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        Self {
-            ident: buffer.read(),
-            type_expr: buffer.read(),
-            constraint: buffer.read(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AsmProto {
-    has_trailing_capture_comma: bool,
-    has_trailing_input_comma: bool,
-    clobbers_expr: NodeIndex,
-    captures: Option<ExtraIndexRange<AsmCapture>>,
-    inputs: Option<ExtraIndexRange<AsmInput>>,
-    outputs: Option<ExtraIndexRange<AsmOutput>>,
-}
-
-impl Packable for AsmProto {
-    const LEN: usize = <(
-        BitPacked<(bool, bool)>,
-        Option<ExtraIndexRange<AsmCapture>>,
-        Option<ExtraIndexRange<AsmInput>>,
-        Option<ExtraIndexRange<AsmOutput>>,
-    )>::LEN;
-
-    fn write_packed(self, buffer: &mut PackedStreamWriter<'_>) {
-        buffer.write(BitPacked::pack_bits((
-            self.has_trailing_capture_comma,
-            self.has_trailing_input_comma,
-        )));
-        buffer.write(self.clobbers_expr);
-        buffer.write(self.captures);
-        buffer.write(self.inputs);
-        buffer.write(self.outputs);
-    }
-
-    fn read_packed(buffer: &mut PackedStreamReader) -> Self {
-        let (has_trailing_capture_comma, has_trailing_input_comma) =
-            buffer.read::<BitPacked<(bool, bool)>>().unpack();
-        Self {
-            has_trailing_capture_comma,
-            has_trailing_input_comma,
-            clobbers_expr: buffer.read(),
-            captures: buffer.read(),
-            inputs: buffer.read(),
-            outputs: buffer.read(),
         }
     }
 }
@@ -4608,110 +4363,53 @@ fn expect_prefix_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     }
 }
 
+/// AsmExpr <- KEYWORD_asm KEYWORD_volatile? AsmBlock
+/// AsmBlock <- LBRACE AsmStatement* RBRACE
+/// AsmStatement
+///     <- (!CORE_IDENTIFIER !BUILTIN_IDENTIFIER Token)* SEMICOLON
 fn expect_asm_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {
     let asm_token = p.expect_token(Token!(asm))?;
-
-    let mut captures = vec![];
-    let mut has_trailing_capture_comma = false;
-    if p.eat_token(Token!('[')) {
-        while !p.eat_token(Token!(']')) {
-            let ident = p.expect_token(Token!(#<identifier>))?;
-            if p.eat_token(Token!(:)) {
-                let type_expr = if !p.peek(Token!(=)) {
-                    Some(expect_type_expr(p)?)
-                } else {
-                    None
-                };
-                p.expect_token(Token!(=))?;
-                let init_expr = expect_expr(p)?;
-                has_trailing_capture_comma = p.eat_token(Token!(,));
-                captures.push(AsmCapture {
-                    ident,
-                    type_expr,
-                    init_expr: Some(init_expr),
-                });
-            } else {
-                captures.push(AsmCapture {
-                    ident,
-                    type_expr: None,
-                    init_expr: None,
-                });
-                has_trailing_capture_comma = p.eat_token(Token!(,));
-            }
-        }
-    }
-
-    let mut inputs = vec![];
-    let has_trailing_input_comma;
-    p.expect_token(Token!('('))?;
-    let clobbers_expr = loop {
-        if p.peek(Token!(#<identifier>)) && p.peek2(Token!(:)) {
-            let ident = p.next();
-            p.next();
-            let constraint = p.expect_token(Token!(#<string_literal>))?;
-            p.expect_token(Token!(,))?;
-            inputs.push(AsmInput { ident, constraint });
-        } else {
-            let expr = expect_expr(p)?;
-            has_trailing_input_comma = p.eat_token(Token!(,));
-            p.expect_token(Token!(')'))?;
-            break expr;
-        }
-    };
-
-    let volatile_token = p.take_token(Token!(volatile));
-    let mut outputs = vec![];
-    if p.eat_token(Token!(->)) {
-        p.expect_token(Token!('('))?;
-        while !p.eat_token(Token!(')')) {
-            let ident = p.expect_token(Token!(#<identifier>))?;
-            p.expect_token(Token!(:))?;
-            let type_expr = expect_type_expr(p)?;
-            let constraint = p.expect_token(Token!(#<string_literal>))?;
-            outputs.push(AsmOutput {
-                ident,
-                type_expr,
-                constraint,
-            });
-            if !p.eat_token(Token!(,)) {
-                p.expect_token(Token!(')'))?;
-                break;
-            }
-        }
-    }
-
+    let mut statements = vec![];
     p.expect_token(Token!('{'))?;
-    let instr_expr = expect_expr(p)?;
-    p.expect_token(Token!('}'))?;
-
-    if captures.is_empty() && inputs.is_empty() && outputs.is_empty() && !has_trailing_input_comma {
-        if volatile_token.is_none() {
-            Ok(p.push_node(asm_token, NodeData::AsmSimple(clobbers_expr, instr_expr)))
+    while !p.peek(Token!('}')) {
+        while p.eat_token(Token!(;)) {}
+        if let Some(start) = p.take_token(Token!(#<builtin_identifier>)) {
+            todo!()
         } else {
-            Ok(p.push_node(
-                asm_token,
-                NodeData::AsmVolatileSimple(clobbers_expr, instr_expr),
-            ))
-        }
-    } else {
-        let captures = p.push_packed_list(&captures);
-        let inputs = p.push_packed_list(&inputs);
-        let outputs = p.push_packed_list(&outputs);
-        let proto = p.push_packed(AsmProto {
-            has_trailing_capture_comma,
-            has_trailing_input_comma,
-            clobbers_expr,
-            captures,
-            inputs,
-            outputs,
-        });
-
-        if volatile_token.is_none() {
-            Ok(p.push_node(asm_token, NodeData::Asm(proto, instr_expr)))
-        } else {
-            Ok(p.push_node(asm_token, NodeData::AsmVolatile(proto, instr_expr)))
+            let start = match p.tag() {
+                Token!(#<invalid>)
+                | Token!(#<eof>)
+                | Token!(#<core_identifier>)
+                | Token!(#<builtin_identifier>)
+                | Token!(#<inner_doc_comment>)
+                | Token!(#<outer_doc_comment>) => {
+                    p.fail(ErrorData::ExpectedAsmToken)?;
+                    unreachable!()
+                }
+                _ => p.next(),
+            };
+            while !p.peek(Token!(;)) {
+                match p.tag() {
+                    Token!(#<invalid>)
+                    | Token!(#<eof>)
+                    | Token!(#<core_identifier>)
+                    | Token!(#<builtin_identifier>)
+                    | Token!(#<inner_doc_comment>)
+                    | Token!(#<outer_doc_comment>) => {
+                        p.fail(ErrorData::ExpectedAsmToken)?;
+                    }
+                    _ => {}
+                }
+                p.next();
+            }
+            let end = p.next();
+            statements.push(p.push_node(start, NodeData::AsmStatement(start, end)));
         }
     }
+    let end_token = p.next();
+
+    let statements = p.push_packed_list(&statements).map(|x| p.push_packed(x));
+    Ok(p.push_node(asm_token, NodeData::Asm(statements, end_token)))
 }
 
 fn expect_if_expr(p: &mut Parser<'_>) -> Result<NodeIndex, ()> {

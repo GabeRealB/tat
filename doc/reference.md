@@ -313,7 +313,7 @@ PrimaryExpr
      / Block
      / CurlySuffixExpr
 
-AsmExpr <- KEYWORD_asm AsmCaptures? LPAREN (AsmInput COMMA)? Expr COMMA? RPAREN KEYWORD_volatile? AsmOutput? AsmBlock
+AsmExpr <- KEYWORD_asm AsmBlock
 
 IfExpr <- TODO
 
@@ -476,19 +476,38 @@ FnCallArguments <- LPAREN ExprList RPAREN
 
 # *** Assembly ***
 
-AsmCaptures <- LBRACKET (AsmCaptureItem COMMA)* AsmCaptureItem? COMMA? RBRACKET
+AsmBlock <- LBRACE AsmStatement* RBRACE
 
-AsmCaptureItem <- IDENTIFIER (COLON TypeExpr? EQUAL Expr)?
+AsmStatement 
+    <- IDENTIFIER COLON
+     / AsmDirective SEMICOLON
+     / (!SEMICOLON Token)* SEMICOLON
 
-AsmInput <- (AsmInputItem COMMA)* AsmInputItem?
+AsmDirective
+    <- ASM_KEYWORD_pure
+     / ASM_KEYWORD_clobber IDENTIFIER (COMMA IDENTIFIER)*
+     / ASM_KEYWORD_clobberMemory
+     / ASM_KEYWORD_define IDENTIFIER AsmExpr
+     / AsmExprDirective AsmExpr (COMMA AsmExpr)*
 
-AsmInputItem <- IDENTIFIER COLON STRING_LITERAL
+AsmExprDirective 
+    <- ASM_KEYWORD_string 
+     / ASM_KEYWORD_cstring
+     / ASM_KEYWORD_u8
+     / ASM_KEYWORD_u16
+     / ASM_KEYWORD_u32
+     / ASM_KEYWORD_u64
 
-AsmOutput <- MINUSARROW LPAREN (AsmOutputItem COMMA)* AsmOutputItem? RPAREN
-
-AsmOutputItem <- IDENTIFIER COLON TypeExpr STRING_LITERAL
-
-AsmBlock <- LBRACE Expr RBRACE
+ASM_KEYWORD_clobber        <- '#clobber'        end_of_word
+ASM_KEYWORD_clobberMemory  <- '#clobberMemory'  end_of_word
+ASM_KEYWORD_define         <- '#define'         end_of_word
+ASM_KEYWORD_pure           <- '#pure'           end_of_word
+ASM_KEYWORD_string         <- '#string'         end_of_word
+ASM_KEYWORD_cstring        <- '#cstring'        end_of_word
+ASM_KEYWORD_u8             <- '#u8'             end_of_word
+ASM_KEYWORD_u16            <- '#u16'            end_of_word
+ASM_KEYWORD_u32            <- '#u32'            end_of_word
+ASM_KEYWORD_u64            <- '#u64'            end_of_word
 
 # *** Functions ***
 
@@ -793,4 +812,25 @@ Keyword
      / KEYWORD_throw / KEYWORD_try / KEYWORD_union
      / KEYWORD_unreachable / KEYWORD_var / KEYWORD_volatile
      / KEYWORD_where / KEYWORD_while
+     
+Token
+    <- CHAR_LITERAL / FLOAT_LITERAL / INTEGER_LITERAL / RAW_STRING_LITERAL
+     / STRING_LITERAL / IDENTIFIER / BUILTIN_IDENTIFIER / CORE_IDENTIFIER
+     / AMPERSAND / AMPERSANDEQUAL / ASTERISK / ASTERISKEQUAL
+     / ASTERISKPERCENT / ASTERISKPERCENTEQUAL / ASTERISKPIPE / ASTERISKPIPEEQUAL
+     / CARET / CARETEQUAL / COLON / COLON2
+     / COMMA / DOT / DOT2 / DOT2EQUAL
+     / DOT3 / DOTAMPERSAND / DOTASTERISK / DOTEXCLAMATIONMARK
+     / DOTQUESTIONMARK / EQUAL / EQUALEQUAL / EQUALRARROW
+     / EXCLAMATIONMARK / EXCLAMATIONMARKEQUAL / LARROW / LARROW2
+     / LARROW2EQUAL / LARROW2PIPE / LARROW2PIPEEQUAL / LARROWEQUAL
+     / LARROWEQUALRARROW / LBRACE / LBRACKET / LPAREN
+     / MINUS / MINUSEQUAL / MINUSPERCENT / MINUSPERCENTEQUAL
+     / MINUSPIPE / MINUSPIPEEQUAL / MINUSARROW / PERCENT
+     / PERCENTEQUAL / PIPE / PIPEEQUAL / PLUS
+     / PLUS2 / PLUSEQUAL / PLUSPERCENT / PLUSPERCENTEQUAL
+     / PLUSPIPE / PLUSPIPEEQUAL / QUESTIONMARK / RARROW
+     / RARROW2 / RARROW2EQUAL / RARROWEQUAL / RBRACE
+     / RBRACKET / RPAREN / SEMICOLON / SLASH
+     / SLASHEQUAL / TILDE / Keyword
 ```
